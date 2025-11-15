@@ -1,0 +1,40 @@
+// components/home/choose-package.tsx
+"use client";
+import Link from "next/link";
+import { CustomButton } from "../ui/custom-button";
+
+export function ReadyToStart() {
+  return (
+    <section className="py-20 px-8 mt-20">
+      <div className="max-w-6xl mx-auto">
+        {/* Section Header */}
+        <div className="text-center mb-10">
+          <div className="flex justify-center mb-6 relative">
+            <div className="h-36 bg-linear-to-b from-[#FC903B]/10 to-[#FC903B] w-px absolute bottom-0 z-0"></div>
+            <span className="px-3.5 py-1.5 bg-linear-to-r to-[#FABC2D] from-[#FF6349] rounded-full text-background z-10 font-bold">
+              4
+            </span>
+          </div>
+          <div className="mb-4">
+            <span className="text-2xl font-semibold text-primary">
+              Ready to get your code?
+            </span>
+          </div>
+          <h2 className="text-2xl lg:text-4xl font-bold tracking-tight text-center mb-4 text-primary">
+            Join 14,385+ happy customers. Get instant access now!
+          </h2>
+        </div>
+
+        {/* Browse More Button */}
+        <div className="flex justify-center gap-x-2">
+          <Link href="/products">
+            <CustomButton variant="black">Browse More Packages</CustomButton>
+          </Link>
+          <Link href="/products">
+            <CustomButton variant="white">Login to account</CustomButton>
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
