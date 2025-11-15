@@ -38,11 +38,24 @@ export function HeroSection() {
         </div>
       </div>
 
-      {/* Divider */}
-      <div className="h-px bg-white/10 my-20 w-full absolute" />
+      {/* bg */}
+      <div className=" z-0 h-full w-full flex flex-col space-y-28 items-center justify-center absolute pb-20 top-0">
+        <div className="h-px bg-white/15 w-7/12" />
+        <div className="h-px bg-white/15 w-7/12" />
+        <div className="h-px bg-white/15 w-7/12" />
+        <div className="h-px bg-white/15 w-7/12" />
+      </div>
+      <div className="z-0  h-full w-full flex flex-row space-x-28 items-center justify-center absolute pb-20 top-0">
+        <div className="w-px bg-white/15 h-9/12" />
+        <div className="w-px bg-white/15 h-9/12" />
+        <div className="w-px bg-white/15 h-9/12" />
+        <div className="w-px bg-white/15 h-9/12" />
+        <div className="w-px bg-white/15 h-9/12" />
+        <div className="w-px bg-white/15 h-9/12" />
+      </div>
 
       {/* Main Content Section */}
-      <div className="flex flex-col items-center gap-8">
+      <div className="flex flex-col items-center gap-8 z-20">
         <h2 className="max-w-80 sm:max-w-2xl text-4xl lg:text-6xl font-bold tracking-tight text-center leading-tight">
           Buy <span className=" text-green-400">Redfinger</span> Redeem Codes
           Instantly
@@ -55,7 +68,7 @@ export function HeroSection() {
         </p>
 
         {/* Primary CTAs */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-center mt-4 sm:mt-8">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center mt-4 sm:mt-8 z-10">
           <CustomButton variant="white" className="px-8 h-12 max-w-40">
             Start Shopping
           </CustomButton>
@@ -65,7 +78,7 @@ export function HeroSection() {
         </div>
 
         {/* CLI Command */}
-        <div className="flex justify-center mt-0">
+        <div className="flex justify-center mt-0 z-10">
           <code className="bg-white/5 border border-white/10 rounded px-4 py-3 text-xs font-mono text-gray-400">
             ▲ ~ Number 1 RedFinger & VsPhone Sales!
           </code>
