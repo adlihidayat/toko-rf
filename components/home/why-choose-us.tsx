@@ -35,7 +35,7 @@ const features = [
 
 export function WhyChooseUs() {
   return (
-    <section className="py-20 px-8 mb-12">
+    <section className="py-20 px-8 mb-12" id="why-choose-us">
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-16 justify-center">
@@ -68,7 +68,7 @@ export function WhyChooseUs() {
             return (
               <div
                 key={index}
-                className="border bg-stone-900/60 rounded-lg p-6 hover:border-white/20 transition group cursor-pointer"
+                className="border bg-stone-900/30 rounded-lg p-6 hover:border-white/20 transition group cursor-pointer"
                 style={{ borderColor: "rgba(255, 255, 255, 0.1)" }}
               >
                 {/* Icon Container */}

@@ -1,4 +1,4 @@
-// app/(shop)/admin/layout.tsx
+// app/(public)/admin/layout.tsx
 export default function AdminLayout({
   children,
 }: {

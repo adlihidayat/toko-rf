@@ -1,4 +1,4 @@
-// app/page.tsx
+// app/(public)/page.tsx
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";

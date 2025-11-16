@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { scrollToFooter } from "@/lib/scroll-utils";
+import { scrollToSection } from "@/lib/scroll-utils";
 
 export function PublicNavbar() {
   return (
@@ -17,7 +17,9 @@ export function PublicNavbar() {
             <span className="font-medium text-base tracking-wide">TokoRF</span>
           </Link>
 
-          <span className=" text-2xl font-extralight text-stone-700">/</span>
+          <span className="hidden md:block text-2xl font-extralight text-stone-700">
+            /
+          </span>
 
           <div className="hidden lg:flex items-center gap-12 text-sm">
             <a
@@ -26,14 +28,14 @@ export function PublicNavbar() {
             >
               Home
             </a>
-            <a
-              href="/#products"
-              className="text-[#a1a1a1] hover:text-[#ededed] transition"
+            <button
+              onClick={() => scrollToSection("choose-package")}
+              className="text-[#a1a1a1] hover:text-[#ededed] transition cursor-pointer"
             >
               Product List
-            </a>
+            </button>
             <button
-              onClick={scrollToFooter}
+              onClick={() => scrollToSection("footer")}
               className="text-[#a1a1a1] hover:text-[#ededed] transition cursor-pointer"
             >
               Contact
@@ -45,7 +47,7 @@ export function PublicNavbar() {
           <Link href="/login">
             <Button
               variant="outline"
-              className="border-2 border-border-2 bg-transparent text-primary hover:bg-white/10 text-sm font-medium rounded-sm leading-0 pt-3.5 pb-4 h-fit"
+              className="border-2 border-border-2 bg-transparent text-primary hover:text-primary hover:bg-white/10 text-sm font-medium rounded-sm leading-0 pt-3.5 pb-4 h-fit"
             >
               Login
             </Button>

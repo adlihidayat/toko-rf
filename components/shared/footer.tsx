@@ -1,10 +1,12 @@
 // components/shared/footer.tsx
+"use client";
+
 import Link from "next/link";
 import { Mail, Phone, MapPin, Github, Twitter, Linkedin } from "lucide-react";
 
 export function Footer() {
   return (
-    <footer className="bg-[#0a0a0a] border-t border-white/10 mt-20">
+    <footer id="footer" className="bg-[#0a0a0a] border-t border-white/10 mt-20">
       <div className="max-w-7xl mx-auto px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
           {/* Brand */}
@@ -103,7 +105,7 @@ export function Footer() {
         {/* Social Links & Copyright */}
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-[#a1a1a1] text-xs">
-            &copy; 2024 Store. All rights reserved.
+            &copy; 2025 Store. All rights reserved.
           </p>
 
           <div className="flex items-center gap-4">

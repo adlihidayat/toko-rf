@@ -4,9 +4,10 @@ import type { Metadata } from "next";
 import { Navbar } from "@/components/navbar/navbar";
 import { Footer } from "@/components/shared/footer";
 import "./globals.css";
+import { UserRoleProvider } from "./providers";
 
 export const metadata: Metadata = {
-  title: "E-Commerce Store",
+  title: "TokoRF | Jual Beli Redfinger terpercaya",
   description: "Your awesome e-commerce platform",
 };
 
@@ -28,9 +29,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans} bg-dark text-primary`}>
-        <Navbar />
-        <main className="pt-16 min-h-screen">{children}</main>
-        <Footer />
+        <UserRoleProvider>
+          <Navbar />
+          {children}
+        </UserRoleProvider>
       </body>
     </html>
   );

@@ -106,7 +106,7 @@ export function WhatIsRedfinger() {
                 return (
                   <div
                     key={index}
-                    className="border border-white/10 rounded-lg p-6 hover:border-white/20 transition group"
+                    className="border border-white/10 bg-stone-900/30 rounded-lg p-6 hover:border-white/20 transition group"
                   >
                     {/* Icon */}
                     <div className="mb-4">
