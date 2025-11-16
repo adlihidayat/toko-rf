@@ -1,4 +1,4 @@
-// components/home/choose-Product.tsx
+// components/home/choose-product.tsx
 "use client";
 import Link from "next/link";
 import { ProductCard } from "../shared/product-card";
@@ -8,36 +8,41 @@ import { useRouter } from "next/navigation";
 
 const Products = [
   {
+    _id: "item_003",
     name: "VIP 7 DAY",
     price: "Rp 19.300",
     stock: 0,
     isOutOfStock: true,
     isMostPopular: false,
-    cpuCore: "8 core cpu",
-    android: "Android 12",
-    ram: "4G RAM",
-    rom: "64G ROM",
-    bit: "64 BIT",
-    processor: "Qualcomm",
+    cpuCore: "4 core cpu",
+    android: "Android 10",
+    ram: "2G RAM",
+    rom: "16G ROM",
+    bit: "32 BIT",
+    processor: "Snapdragon",
     rating: 4.8,
-    reviews: 6521,
+    reviews: 1823,
+    minimumPurchase: 5,
   },
   {
+    _id: "item_002",
     name: "VIP 30 DAY",
     price: "Rp 60.000",
     stock: 0,
-    isOutOfStock: true,
+    isOutOfStock: false,
     isMostPopular: false,
-    cpuCore: "8 core cpu",
-    android: "Android 12",
-    ram: "4G RAM",
-    rom: "64G ROM",
+    cpuCore: "6 core cpu",
+    android: "Android 11",
+    ram: "3G RAM",
+    rom: "32G ROM",
     bit: "64 BIT",
-    processor: "Qualcomm",
+    processor: "MediaTek",
     rating: 4.8,
-    reviews: 6521,
+    reviews: 3245,
+    minimumPurchase: 2,
   },
   {
+    _id: "item_001",
     name: "VIP 90 DAY",
     price: "Rp 150.000",
     stock: 5,
@@ -51,6 +56,7 @@ const Products = [
     processor: "Qualcomm",
     rating: 4.8,
     reviews: 6521,
+    minimumPurchase: 1,
   },
 ];
 
@@ -58,25 +64,13 @@ export function ChooseProduct() {
   const isLoggedIn = false; // TODO: Get this from your auth context/state
   const router = useRouter();
 
-  const handleBuyProduct = useCallback((ProductName: string) => {
-    console.log(`Bought ${ProductName}`);
-    // TODO: Add to cart logic here
-  }, []);
-
   const handleBrowseMore = useCallback(() => {
     if (!isLoggedIn) {
       // Redirect to login if not logged in
       router.push("/login");
       return;
-    } else {
-      router.push("/products");
-      return;
     }
-
-    // Call the onBuy callback if user is logged in
-    // if (onBuy) {
-    //   onBuy();
-    // }
+    router.push("/products");
   }, [isLoggedIn, router]);
 
   return (
@@ -105,24 +99,25 @@ export function ChooseProduct() {
 
         {/* Product Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {Products.map((pkg, index) => (
+          {Products.map((product) => (
             <ProductCard
-              key={index}
-              name={pkg.name}
-              price={pkg.price}
-              stock={pkg.stock}
-              isOutOfStock={pkg.isOutOfStock}
-              isMostPopular={pkg.isMostPopular}
-              cpuCore={pkg.cpuCore}
-              android={pkg.android}
-              ram={pkg.ram}
-              rom={pkg.rom}
-              bit={pkg.bit}
-              processor={pkg.processor}
-              rating={pkg.rating}
-              reviews={pkg.reviews}
+              key={product._id}
+              _id={product._id}
+              name={product.name}
+              price={product.price}
+              stock={product.stock}
+              isOutOfStock={product.isOutOfStock}
+              isMostPopular={product.isMostPopular}
+              cpuCore={product.cpuCore}
+              android={product.android}
+              ram={product.ram}
+              rom={product.rom}
+              bit={product.bit}
+              processor={product.processor}
+              rating={product.rating}
+              reviews={product.reviews}
               isLoggedIn={isLoggedIn}
-              onBuy={() => handleBuyProduct(pkg.name)}
+              minimumPurchase={product.minimumPurchase}
             />
           ))}
         </div>
@@ -132,7 +127,7 @@ export function ChooseProduct() {
           <CustomButton
             variant="black"
             onClick={handleBrowseMore}
-            className=" w-52 rounded-lg"
+            className="w-52 rounded-lg"
           >
             Browse More Products
           </CustomButton>

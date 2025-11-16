@@ -27,7 +27,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp, Eye, Edit2, Trash2, Ellipsis } from "lucide-react";
+import { TrendingUp, Eye, Edit2, Trash2, Ellipsis, Phone } from "lucide-react";
 import { UserService } from "@/lib/db/users";
 import { PurchaseService } from "@/lib/db/purchases";
 import { UserDocument, PurchaseWithDetails } from "@/lib/types";
@@ -71,11 +71,12 @@ export default function UserManagementPage() {
     fetchData();
   }, []);
 
-  // Filter data
+  // Filter data - search by username, email, or phone number
   const filteredUsers = users.filter(
     (u) =>
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase())
+      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.phoneNumber.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
@@ -133,7 +134,6 @@ export default function UserManagementPage() {
         const deleted = await UserService.deleteUser(selectedUser._id);
         if (deleted) {
           setUsers(users.filter((u) => u._id !== selectedUser._id));
-          // Also remove user's purchases
           setPurchases(purchases.filter((p) => p.userId !== selectedUser._id));
         }
       }
@@ -219,11 +219,15 @@ export default function UserManagementPage() {
       <div className="flex flex-col md:flex-row justify-between gap-4 mb-8">
         <div className="flex-1 max-w-md">
           <Input
-            placeholder="Search by username or email..."
+            placeholder="Search by username, email, or phone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="bg-stone-900/30 border-white/10"
           />
+        </div>
+        <div className="text-sm text-secondary self-center">
+          Found {filteredUsers.length} user
+          {filteredUsers.length !== 1 ? "s" : ""}
         </div>
       </div>
 
@@ -236,89 +240,99 @@ export default function UserManagementPage() {
             {searchTerm ? "No users found" : "No users yet"}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="text-primary">User ID</TableHead>
-                <TableHead className="text-primary">Username</TableHead>
-                <TableHead className="text-primary">Email</TableHead>
-                <TableHead className="text-primary">Role</TableHead>
-                <TableHead className="text-primary">Join Date</TableHead>
-                <TableHead className="text-primary text-right">
-                  Actions
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedUsers.map((user) => (
-                <TableRow
-                  key={user._id}
-                  className="border-white/10 hover:bg-white/5 transition"
-                >
-                  <TableCell className="text-secondary font-mono text-sm">
-                    {user._id}
-                  </TableCell>
-                  <TableCell className="font-medium text-primary">
-                    {user.username}
-                  </TableCell>
-                  <TableCell className="text-secondary">{user.email}</TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        user.role === "admin"
-                          ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                          : "bg-purple-500/20 text-purple-300 border-purple-500/30"
-                      }
-                    >
-                      {user.role === "admin" ? "Admin" : "User"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-secondary">
-                    {user.joinDate.toLocaleDateString("id-ID")}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-primary hover:text-primary hover:bg-primary/10"
-                        >
-                          <Ellipsis className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-stone-900 border-stone-800"
-                      >
-                        <DropdownMenuItem
-                          onClick={() => handleDetailClick(user)}
-                          className="text-primary hover:bg-stone-800 hover:text-primary cursor-pointer focus:bg-stone-800 focus:text-primary"
-                        >
-                          <Eye className="w-4 h-4 mr-2" />
-                          Detail
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleEditClick(user)}
-                          className="text-primary hover:bg-stone-800 hover:text-primary cursor-pointer focus:bg-stone-800 focus:text-primary"
-                        >
-                          <Edit2 className="w-4 h-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteClick(user)}
-                          className="text-red-400 hover:bg-stone-800 hover:text-red-300 cursor-pointer focus:bg-stone-800 focus:text-red-300"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-white/10 hover:bg-transparent">
+                  <TableHead className="text-primary">User ID</TableHead>
+                  <TableHead className="text-primary">Username</TableHead>
+                  <TableHead className="text-primary">Email</TableHead>
+                  <TableHead className="text-primary">Phone</TableHead>
+                  <TableHead className="text-primary">Role</TableHead>
+                  <TableHead className="text-primary">Join Date</TableHead>
+                  <TableHead className="text-primary text-right">
+                    Actions
+                  </TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {paginatedUsers.map((user) => (
+                  <TableRow
+                    key={user._id}
+                    className="border-white/10 hover:bg-white/5 transition"
+                  >
+                    <TableCell className="text-secondary font-mono text-sm">
+                      {user._id}
+                    </TableCell>
+                    <TableCell className="font-medium text-primary">
+                      {user.username}
+                    </TableCell>
+                    <TableCell className="text-secondary">
+                      {user.email}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 text-secondary">
+                        <span>{user.phoneNumber}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        className={
+                          user.role === "admin"
+                            ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                            : "bg-purple-500/20 text-purple-300 border-purple-500/30"
+                        }
+                      >
+                        {user.role === "admin" ? "Admin" : "User"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-secondary">
+                      {user.joinDate.toLocaleDateString("id-ID")}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-primary hover:text-primary hover:bg-primary/10"
+                          >
+                            <Ellipsis className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="bg-stone-900 border-stone-800"
+                        >
+                          <DropdownMenuItem
+                            onClick={() => handleDetailClick(user)}
+                            className="text-primary hover:bg-stone-800 hover:text-primary cursor-pointer focus:bg-stone-800 focus:text-primary"
+                          >
+                            <Eye className="w-4 h-4 mr-2" />
+                            Detail
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleEditClick(user)}
+                            className="text-primary hover:bg-stone-800 hover:text-primary cursor-pointer focus:bg-stone-800 focus:text-primary"
+                          >
+                            <Edit2 className="w-4 h-4 mr-2" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteClick(user)}
+                            className="text-red-400 hover:bg-stone-800 hover:text-red-300 cursor-pointer focus:bg-stone-800 focus:text-red-300"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 

@@ -32,6 +32,8 @@ import {
   CreateStockInput,
   ProductDocument,
   StockWithProductInfo,
+  CategoryWithStockCount,
+  CreateCategoryInput,
 } from "@/lib/types";
 
 interface ProductDialogProps {
@@ -40,6 +42,7 @@ interface ProductDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: CreateProductInput) => Promise<void>;
   initialData?: ProductDocument;
+  categories: CategoryWithStockCount[];
 }
 
 interface StockDialogProps {
@@ -51,6 +54,14 @@ interface StockDialogProps {
   ) => Promise<void>;
   products: ProductDocument[];
   initialData?: StockWithProductInfo | null;
+}
+
+interface CategoryDialogProps {
+  open: boolean;
+  mode: "add" | "edit";
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: CreateCategoryInput) => Promise<void>;
+  initialData?: CategoryWithStockCount;
 }
 
 interface DeleteDialogProps {
@@ -66,6 +77,7 @@ const INITIAL_PRODUCT_FORM: CreateProductInput = {
   price: 0,
   minimumPurchase: 1,
   description: "",
+  categoryId: "",
   cpuCore: "",
   android: "",
   ram: "",
@@ -81,12 +93,18 @@ const INITIAL_STOCK_FORM = {
   redeemCode: "",
 };
 
+const INITIAL_CATEGORY_FORM: CreateCategoryInput = {
+  name: "",
+  icon: "",
+};
+
 export function ProductDialog({
   open,
   mode,
   onOpenChange,
   onSubmit,
   initialData,
+  categories,
 }: ProductDialogProps) {
   const [formData, setFormData] = useState<CreateProductInput>(
     initialData || INITIAL_PRODUCT_FORM
@@ -100,6 +118,7 @@ export function ProductDialog({
         price: initialData.price,
         minimumPurchase: initialData.minimumPurchase,
         description: initialData.description,
+        categoryId: initialData.categoryId,
         cpuCore: initialData.cpuCore,
         android: initialData.android,
         ram: initialData.ram,
@@ -169,6 +188,35 @@ export function ProductDialog({
             </div>
             <div>
               <Label className="text-sm font-medium text-primary mb-2 block">
+                Category
+              </Label>
+              <Select
+                value={formData.categoryId}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, categoryId: value })
+                }
+              >
+                <SelectTrigger className="bg-stone-900/50 border-stone-800 text-primary h-10">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="bg-stone-900 border-stone-800">
+                  {categories.map((category) => (
+                    <SelectItem
+                      key={category._id}
+                      value={category._id}
+                      className="text-primary"
+                    >
+                      {category.icon} {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium text-primary mb-2 block">
                 Price (Rp)
               </Label>
               <Input
@@ -180,9 +228,6 @@ export function ProductDialog({
                 className="bg-stone-900/50 border-stone-800 text-primary h-10"
               />
             </div>
-          </div>
-
-          <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-primary mb-2 block">
                 Minimum Purchase
@@ -196,6 +241,9 @@ export function ProductDialog({
                 className="bg-stone-900/50 border-stone-800 text-primary h-10"
               />
             </div>
+          </div>
+
+          <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-primary mb-2 block">
                 Description
@@ -208,9 +256,6 @@ export function ProductDialog({
                 className="bg-stone-900/50 border-stone-800 text-primary placeholder:text-stone-600 h-10"
               />
             </div>
-          </div>
-
-          <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium text-primary mb-2 block">
                 Badge
@@ -360,7 +405,7 @@ export function ProductDialog({
           <Button
             className="bg-primary text-black hover:bg-gray-200 px-8"
             onClick={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || !formData.categoryId}
           >
             {isLoading ? "Saving..." : mode === "edit" ? "Update" : "Submit"}
           </Button>
@@ -410,7 +455,6 @@ export function StockDialog({
     setFormData({ ...formData, redeemCode: e.target.value });
   };
 
-  // For display purposes - count lines (only in add mode)
   const codeCount =
     mode === "add"
       ? formData.redeemCode.split("\n").filter((line) => line.trim().length > 0)
@@ -515,6 +559,181 @@ export function StockDialog({
               : mode === "edit"
               ? "Update"
               : `Add ${codeCount} Stock${codeCount !== 1 ? "s" : ""}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function CategoryDialog({
+  open,
+  mode,
+  onOpenChange,
+  onSubmit,
+  initialData,
+}: CategoryDialogProps) {
+  const [formData, setFormData] = useState<CreateCategoryInput>(
+    INITIAL_CATEGORY_FORM
+  );
+  const [preview, setPreview] = useState<string>("");
+  const [imageError, setImageError] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && initialData) {
+      setFormData({
+        name: initialData.name,
+        icon: initialData.icon,
+      });
+      setPreview(initialData.icon);
+      setImageError("");
+    } else if (open && !initialData) {
+      setFormData(INITIAL_CATEGORY_FORM);
+      setPreview("");
+      setImageError("");
+    }
+  }, [open, initialData]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === "icon") {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+      setImageError("");
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
+  };
+
+  const handlePreview = () => {
+    if (!formData.icon) {
+      setImageError("Please enter a URL");
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(formData.icon);
+      setPreview(formData.icon);
+      setImageError("");
+    } catch {
+      setImageError("Invalid URL format");
+      setPreview("");
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!preview) {
+      setImageError("Please load a preview first");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onSubmit(formData);
+      setFormData(INITIAL_CATEGORY_FORM);
+      setPreview("");
+      setImageError("");
+      onOpenChange(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleImageLoadError = () => {
+    setImageError("Failed to load image from URL");
+    setPreview("");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg bg-background border-stone-800 max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-stone-600 [&::-webkit-scrollbar-thumb]:rounded-full">
+        <DialogHeader className="border-b border-stone-800 pb-6">
+          <DialogTitle className="text-2xl font-bold text-primary">
+            {mode === "edit" ? "Edit Category" : "Add New Category"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6 py-6">
+          <div>
+            <Label className="text-sm font-medium text-primary mb-2 block">
+              Category Name
+            </Label>
+            <Input
+              name="name"
+              placeholder="e.g. Gaming VIP"
+              value={formData.name}
+              onChange={handleChange}
+              className="bg-stone-900/50 border-stone-800 text-primary placeholder:text-stone-600 h-10"
+            />
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium text-primary mb-2 block">
+              Icon URL
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                name="icon"
+                placeholder="e.g. https://example.com/icon.png"
+                value={formData.icon}
+                onChange={handleChange}
+                className="bg-stone-900/50 border-stone-800 text-primary placeholder:text-stone-600 h-10 flex-1"
+              />
+              <Button
+                type="button"
+                onClick={handlePreview}
+                className="bg-primary text-black hover:bg-gray-200 px-4"
+                disabled={!formData.icon}
+              >
+                Preview
+              </Button>
+            </div>
+            <p className="text-xs text-secondary mt-2">
+              Enter the full URL to your image file
+            </p>
+          </div>
+
+          {imageError && (
+            <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
+              <p className="text-sm text-red-400">{imageError}</p>
+            </div>
+          )}
+
+          {preview && (
+            <div className="bg-stone-800/30 rounded-lg p-6 text-center">
+              <p className="text-sm text-secondary mb-4">Preview:</p>
+              <img
+                src={preview}
+                alt="Category icon preview"
+                onError={handleImageLoadError}
+                className="w-24 h-24 object-contain mx-auto rounded-lg border border-stone-700"
+              />
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-3 border-t border-stone-800 pt-6">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isLoading}
+            className="border-stone-800 text-secondary hover:text-primary hover:bg-stone-900/50"
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-primary text-black hover:bg-gray-200 px-8"
+            onClick={handleSubmit}
+            disabled={isLoading || !formData.name.trim() || !preview}
+          >
+            {isLoading ? "Saving..." : mode === "edit" ? "Update" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

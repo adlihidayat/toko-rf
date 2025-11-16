@@ -21,7 +21,7 @@ export function PublicNavbar() {
             /
           </span>
 
-          <div className="hidden lg:flex items-center gap-12 text-sm">
+          <div className="hidden md:flex items-center gap-12 text-sm">
             <a
               href="/"
               className="text-[#a1a1a1] hover:text-[#ededed] transition"

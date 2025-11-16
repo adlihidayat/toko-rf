@@ -5,127 +5,286 @@ import { useState, useEffect } from "react";
 import { ProductCard } from "@/components/shared/product-card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, ChevronLeft } from "lucide-react";
 import { ProductService } from "@/lib/db/products";
-import { ProductDocument } from "@/lib/types";
+import { CategoryService } from "@/lib/db/categories";
+import { ProductDocument, CategoryWithStockCount } from "@/lib/types";
 
 export default function ProductsPage() {
+  const [categories, setCategories] = useState<CategoryWithStockCount[]>([]);
   const [products, setProducts] = useState<ProductDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [isLoggedIn] = useState(false); // TODO: Get from auth context
 
-  // Fetch products from mock data
+  // FIX: Check if user is actually logged in from cookies
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Category selection state
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryWithStockCount | null>(null);
+
+  // Get product count for a category
+  const getProductCountInCategory = (categoryId: string) => {
+    return products.filter((p) => p.categoryId === categoryId).length;
+  };
+
+  // FIX: Check auth status on mount
   useEffect(() => {
-    const fetchProducts = async () => {
+    // Check if auth cookies exist (check for user-id instead of auth-token)
+    const checkAuth = () => {
+      const cookies = document.cookie.split(";");
+      const userId = cookies.find((cookie) =>
+        cookie.trim().startsWith("user-id=")
+      );
+      const userRole = cookies.find((cookie) =>
+        cookie.trim().startsWith("user-role=")
+      );
+      const hasAuth = !!(userId && userRole);
+
+      console.log("🔍 Auth Check:");
+      console.log("  - All cookies:", document.cookie);
+      console.log("  - User ID found:", userId);
+      console.log("  - User role found:", userRole);
+      console.log("  - Is logged in:", hasAuth);
+
+      setIsLoggedIn(hasAuth);
+    };
+
+    checkAuth();
+  }, []);
+
+  // Fetch categories and products on mount
+  useEffect(() => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const allProducts = await ProductService.getAllProducts();
+        const [allCategories, allProducts] = await Promise.all([
+          CategoryService.getAllCategoriesWithStockCount(),
+          ProductService.getAllProducts(),
+        ]);
+        setCategories(allCategories);
         setProducts(allProducts);
       } catch (error) {
-        console.error("Failed to fetch products:", error);
+        console.error("Failed to fetch data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchProducts();
+    fetchData();
   }, []);
 
-  // Filter products based on search
-  const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter based on view mode (category or product)
+  const filteredCategories = categories.filter((cat) =>
+    cat.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleBuyProduct = (productName: string) => {
-    console.log(`Added ${productName} to cart`);
-    // TODO: Implement add to cart logic
+  const filteredProducts = selectedCategory
+    ? products
+        .filter((p) => p.categoryId === selectedCategory._id)
+        .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    : [];
+
+  const handleSelectCategory = (category: CategoryWithStockCount) => {
+    setSelectedCategory(category);
+    setSearchTerm(""); // Reset search when switching to product view
   };
+
+  const handleBackToCategories = () => {
+    setSelectedCategory(null);
+    setSearchTerm(""); // Reset search when going back
+  };
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-primary">
+        <div className="text-center py-40">
+          <p className="text-lg text-secondary">Loading...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-primary md:px-24">
-      {/* Header Section */}
       <section className="py-20 px-8 pt-20">
         <div className="max-w-7xl mx-auto">
-          {/* Section Label */}
-          <div className="text-center mb-16">
-            <div className="flex justify-center mb-6 relative">
-              <span className="px-3.5 py-1.5 bg-linear-to-r to-[#00E19D] from-[#009AB2] rounded-full text-background z-10 font-bold">
-                Complete Collection
-              </span>
-            </div>
-
+          {/* Header Section */}
+          <div className="text-center mb-12">
             {/* Main Title */}
             <div className="mb-4">
               <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-primary mb-4">
-                Explore All{" "}
-                <span className="bg-linear-to-r from-[#00BCA8] to-[#00E19D] bg-clip-text text-transparent">
-                  Premium Products
-                </span>
+                {selectedCategory ? (
+                  <>{selectedCategory.name} Products</>
+                ) : (
+                  <>Explore All Premium Categories</>
+                )}
               </h1>
               <p className="text-lg text-secondary max-w-2xl mx-auto">
-                Find the perfect VIP subscription that matches your gaming needs
-                and budget
+                {selectedCategory
+                  ? "Find the perfect product that matches your needs"
+                  : "Choose a category to explore our premium VIP subscriptions"}
               </p>
             </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="max-w-md mx-auto mb-16">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary" />
-              <Input
-                type="text"
-                placeholder="Search products..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-12  bg-stone-900/30 border-white/10 rounded-lg focus:border-[#00BCA8] transition"
-              />
-            </div>
-          </div>
+          {/* Search & Filter Bar */}
+          <div className="mb-10">
+            {selectedCategory && (
+              <Button
+                onClick={handleBackToCategories}
+                variant="outline"
+                className="mb-6 border-white/10 hover:bg-stone-800 hover:text-primary cursor-pointer flex items-center gap-2"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to Categories
+              </Button>
+            )}
 
-          {/* Product Count Badge */}
-          <div className="flex justify-center mb-12">
-            <Badge className="bg-stone-900/50 border border-white/10 text-secondary px-4 py-2">
-              Showing {filteredProducts.length} of {products.length} products
-            </Badge>
-          </div>
-
-          {/* Products Grid */}
-          {loading ? (
-            <div className="text-center py-20">
-              <p className="text-lg text-secondary">Loading products...</p>
-            </div>
-          ) : filteredProducts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredProducts.map((product) => (
-                <div key={product._id} className="h-full">
-                  <ProductCard
-                    name={product.name}
-                    price={`Rp ${product.price.toLocaleString("id-ID")}`}
-                    stock={0} // Stock count can be fetched separately if needed
-                    isOutOfStock={false}
-                    isMostPopular={product.badge === "popular"}
-                    cpuCore={product.cpuCore}
-                    android={product.android}
-                    ram={product.ram}
-                    rom={product.rom}
-                    bit={product.bit}
-                    processor={product.processor}
-                    rating={4.8} // You can calculate this from purchases if needed
-                    reviews={product.reviews}
-                    isLoggedIn={isLoggedIn}
-                    onBuy={() => handleBuyProduct(product.name)}
+            <div className="flex items-center justify-between gap-4">
+              {/* Search Bar - Left */}
+              <div className="flex-1 max-w-md">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary" />
+                  <Input
+                    type="text"
+                    placeholder={
+                      selectedCategory
+                        ? "Search products..."
+                        : "Search categories..."
+                    }
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-12 h-12 bg-stone-900/30 border-white/10 rounded-lg focus:border-[#00BCA8] transition"
                   />
                 </div>
-              ))}
+              </div>
+
+              {/* Count & Filter - Right */}
+              <div className="flex items-center gap-3">
+                <Badge className="bg-stone-900/50 border border-white/10 text-secondary px-4 py-2 whitespace-nowrap">
+                  {selectedCategory ? (
+                    <>
+                      <span className="text-[#00BCA8]">
+                        {filteredProducts.length}
+                      </span>{" "}
+                      of{" "}
+                      <span className="text-[#00BCA8]">
+                        {
+                          products.filter(
+                            (p) => p.categoryId === selectedCategory._id
+                          ).length
+                        }
+                      </span>{" "}
+                      products
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[#00BCA8]">
+                        {filteredCategories.length}
+                      </span>{" "}
+                      of{" "}
+                      <span className="text-[#00BCA8]">
+                        {categories.length}
+                      </span>{" "}
+                      categories
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          {/* CATEGORIES VIEW */}
+          {!selectedCategory ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {filteredCategories.length > 0 ? (
+                filteredCategories.map((category) => (
+                  <div
+                    key={category._id}
+                    onClick={() => handleSelectCategory(category)}
+                    className="cursor-pointer group bg-stone-900/50 border border-white/10 rounded-lg p-8 hover:border-[#00BCA8]/50 transition hover:bg-stone-900/70 hover:shadow-lg hover:shadow-[#00BCA8]/10"
+                  >
+                    {/* Category Image */}
+                    <div className="mb-6 overflow-hidden rounded-lg h-48 bg-stone-800/50 flex items-center justify-center relative">
+                      <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-stone-900/40 z-10"></div>
+                      <img
+                        src={category.icon}
+                        alt={category.name}
+                        className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                        onError={(e) => {
+                          e.currentTarget.src =
+                            "https://via.placeholder.com/400?text=No+Image";
+                        }}
+                      />
+                    </div>
+
+                    {/* Category Info */}
+                    <div>
+                      <h3 className="text-xl font-bold text-primary mb-3">
+                        {category.name}
+                      </h3>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-secondary group-hover:text-[#00BCA8] transition">
+                          Explore products →
+                        </p>
+                        <Badge className="bg-background text-secondary border-secondary pb-1">
+                          {getProductCountInCategory(category._id)} products
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-20">
+                  <p className="text-lg text-secondary mb-2">
+                    No categories found
+                  </p>
+                  <p className="text-sm text-secondary/60">
+                    Try adjusting your search terms
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="text-center py-20">
-              <p className="text-lg text-secondary mb-2">No products found</p>
-              <p className="text-sm text-secondary/60">
-                Try adjusting your search terms
-              </p>
+            /* PRODUCTS VIEW */
+            <div>
+              {filteredProducts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {filteredProducts.map((product) => (
+                    <div key={product._id} className="h-full">
+                      <ProductCard
+                        _id={product._id}
+                        name={product.name}
+                        price={`Rp ${product.price.toLocaleString("id-ID")}`}
+                        stock={0}
+                        isOutOfStock={false}
+                        isMostPopular={product.badge === "popular"}
+                        cpuCore={product.cpuCore}
+                        android={product.android}
+                        ram={product.ram}
+                        rom={product.rom}
+                        bit={product.bit}
+                        processor={product.processor}
+                        rating={4.8}
+                        reviews={product.reviews}
+                        isLoggedIn={isLoggedIn}
+                        minimumPurchase={product.minimumPurchase}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-20">
+                  <p className="text-lg text-secondary mb-2">
+                    No products found
+                  </p>
+                  <p className="text-sm text-secondary/60">
+                    Try adjusting your search terms
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

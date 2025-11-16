@@ -110,7 +110,7 @@ export function UserNavbar() {
             /
           </span>
 
-          <div className="hidden lg:flex items-center gap-12 text-sm">
+          <div className="hidden md:flex items-center gap-12 text-sm">
             <Link
               href="/"
               className="text-[#a1a1a1] hover:text-[#ededed] transition"
@@ -129,11 +129,17 @@ export function UserNavbar() {
             >
               Contact
             </button>
+            <Link
+              href="https://www.youtube.com/"
+              className="text-[#a1a1a1] hover:text-[#ededed] transition"
+            >
+              How to Reedem Code
+            </Link>
           </div>
         </div>
 
         {/* Desktop Profile Dropdown */}
-        <div className="hidden lg:block relative" ref={profileDropdownRef}>
+        <div className="hidden md:block relative" ref={profileDropdownRef}>
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
             className="flex items-center gap-3 hover:opacity-80 transition cursor-pointer"
@@ -186,7 +192,7 @@ export function UserNavbar() {
         {/* Mobile Hamburger Menu */}
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="lg:hidden text-[#ededed] hover:text-[#52a8ff] transition"
+          className="md:hidden text-[#ededed] hover:text-[#52a8ff] transition"
         >
           {isMobileMenuOpen ? (
             <X className="w-6 h-6" />
@@ -198,7 +204,7 @@ export function UserNavbar() {
 
       {/* Mobile Full-Screen Menu */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 top-16 bg-black/95 z-40">
+        <div className="md:hidden fixed inset-0 top-16 bg-black/95 z-40">
           <div className="flex flex-col gap-4 p-8">
             {/* Home Link */}
             <Link

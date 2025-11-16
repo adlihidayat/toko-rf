@@ -32,34 +32,39 @@ import {
   Edit2,
   Trash2,
   TrendingUp,
-  TrendingDown,
   Star,
   Box,
   Ellipsis,
+  Tag,
 } from "lucide-react";
 import { ProductService } from "@/lib/db/products";
 import { StockService } from "@/lib/db/stocks";
 import { PurchaseService } from "@/lib/db/purchases";
+import { CategoryService } from "@/lib/db/categories";
 import {
   CreateProductInput,
   CreateStockInput,
   ProductDocument,
   StockWithProductInfo,
   PurchaseWithDetails,
+  CategoryWithStockCount,
+  CreateCategoryInput,
 } from "@/lib/types";
 import {
   ProductDialog,
   StockDialog,
   DeleteDialog,
+  CategoryDialog,
 } from "@/components/admin/ProductStockDialogs";
 
-type ViewMode = "products" | "stocks" | "purchases";
+type ViewMode = "products" | "stocks" | "purchases" | "categories";
 
 export default function ProductManagementPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("products");
   const [products, setProducts] = useState<ProductDocument[]>([]);
   const [stocks, setStocks] = useState<StockWithProductInfo[]>([]);
   const [purchases, setPurchases] = useState<PurchaseWithDetails[]>([]);
+  const [categories, setCategories] = useState<CategoryWithStockCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -72,28 +77,37 @@ export default function ProductManagementPage() {
   );
   const [isStockDialogOpen, setIsStockDialogOpen] = useState(false);
   const [stockDialogMode, setStockDialogMode] = useState<"add" | "edit">("add");
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [categoryDialogMode, setCategoryDialogMode] = useState<"add" | "edit">(
+    "add"
+  );
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] =
     useState<ProductDocument | null>(null);
   const [selectedStock, setSelectedStock] =
     useState<StockWithProductInfo | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<"product" | "stock" | null>(
-    null
-  );
+  const [selectedCategory, setSelectedCategory] =
+    useState<CategoryWithStockCount | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    "product" | "stock" | "category" | null
+  >(null);
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [allProducts, allStocks, allPurchases] = await Promise.all([
-          ProductService.getAllProducts(),
-          StockService.getAllStocksWithProductInfo(),
-          PurchaseService.getAllPurchases(),
-        ]);
+        const [allProducts, allStocks, allPurchases, allCategories] =
+          await Promise.all([
+            ProductService.getAllProducts(),
+            StockService.getAllStocksWithProductInfo(),
+            PurchaseService.getAllPurchases(),
+            CategoryService.getAllCategoriesWithStockCount(),
+          ]);
         setProducts(allProducts);
         setStocks(allStocks);
         setPurchases(allPurchases);
+        setCategories(allCategories);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -115,11 +129,15 @@ export default function ProductManagementPage() {
             s.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             s.redeemCode.toLowerCase().includes(searchTerm.toLowerCase())
         )
-      : purchases.filter(
+      : viewMode === "purchases"
+      ? purchases.filter(
           (p) =>
             p.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.redeemCode.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      : categories.filter((c) =>
+          c.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
 
   const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
@@ -137,7 +155,7 @@ export default function ProductManagementPage() {
   const totalStock = stocks.length;
   const totalProducts = products.length;
   const totalPurchases = purchases.length;
-  const availableStock = stocks.filter((s) => s.isAvailable).length;
+  const totalCategories = categories.length;
 
   // Calculate average product rating from purchases
   const ratedPurchases = purchases.filter((p) => p.rating !== null);
@@ -148,6 +166,7 @@ export default function ProductManagementPage() {
           ratedPurchases.length
         ).toFixed(1)
       : "0";
+
   const handleAddProduct = () => {
     setProductDialogMode("add");
     setSelectedProduct(null);
@@ -178,6 +197,24 @@ export default function ProductManagementPage() {
     setIsStockDialogOpen(true);
   };
 
+  const handleAddCategory = () => {
+    setCategoryDialogMode("add");
+    setSelectedCategory(null);
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleEditCategory = (category: CategoryWithStockCount) => {
+    setCategoryDialogMode("edit");
+    setSelectedCategory(category);
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleDeleteCategory = (category: CategoryWithStockCount) => {
+    setSelectedCategory(category);
+    setDeleteTarget("category");
+    setIsDeleteOpen(true);
+  };
+
   const onProductSubmit = async (data: CreateProductInput) => {
     try {
       if (productDialogMode === "edit" && selectedProduct) {
@@ -204,7 +241,6 @@ export default function ProductManagementPage() {
   ) => {
     try {
       if (stockDialogMode === "edit" && selectedStock) {
-        // For edit mode, update single stock
         await StockService.updateStock(selectedStock._id, {
           productId: data.productId,
           redeemCode: data.redeemCode,
@@ -212,7 +248,6 @@ export default function ProductManagementPage() {
         const allStocks = await StockService.getAllStocksWithProductInfo();
         setStocks(allStocks);
       } else {
-        // For add mode, handle multiple codes
         const codes = data.redeemCode
           .split("\n")
           .map((code) => code.trim())
@@ -232,6 +267,29 @@ export default function ProductManagementPage() {
     }
   };
 
+  const onCategorySubmit = async (data: CreateCategoryInput) => {
+    try {
+      if (categoryDialogMode === "edit" && selectedCategory) {
+        const updated = await CategoryService.updateCategory(
+          selectedCategory._id,
+          data
+        );
+        if (updated) {
+          const allCategories =
+            await CategoryService.getAllCategoriesWithStockCount();
+          setCategories(allCategories);
+        }
+      } else {
+        await CategoryService.createCategory(data);
+        const allCategories =
+          await CategoryService.getAllCategoriesWithStockCount();
+        setCategories(allCategories);
+      }
+    } catch (error) {
+      console.error("Failed to save category:", error);
+    }
+  };
+
   const onDeleteConfirm = async () => {
     try {
       if (deleteTarget === "product" && selectedProduct) {
@@ -240,6 +298,11 @@ export default function ProductManagementPage() {
       } else if (deleteTarget === "stock" && selectedStock) {
         await StockService.deleteStock(selectedStock._id);
         setStocks(stocks.filter((s) => s._id !== selectedStock._id));
+      } else if (deleteTarget === "category" && selectedCategory) {
+        await CategoryService.deleteCategory(selectedCategory._id);
+        const allCategories =
+          await CategoryService.getAllCategoriesWithStockCount();
+        setCategories(allCategories);
       }
     } catch (error) {
       console.error("Failed to delete:", error);
@@ -254,7 +317,7 @@ export default function ProductManagementPage() {
           Product Management
         </h1>
         <p className="text-secondary">
-          Manage your products, inventory, and purchases
+          Manage your products, inventory, categories, and purchases
         </p>
       </div>
 
@@ -322,7 +385,7 @@ export default function ProductManagementPage() {
       </div>
 
       {/* View Mode Tabs */}
-      <div className="flex gap-2 mb-8">
+      <div className="flex gap-2 mb-8 flex-wrap">
         <Button
           variant={viewMode === "products" ? "default" : "outline"}
           onClick={() => setViewMode("products")}
@@ -333,6 +396,17 @@ export default function ProductManagementPage() {
           }
         >
           Products
+        </Button>
+        <Button
+          variant={viewMode === "categories" ? "default" : "outline"}
+          onClick={() => setViewMode("categories")}
+          className={
+            viewMode === "categories"
+              ? "bg-primary text-black hover:bg-primary"
+              : "border-white/10 hover:bg-stone-800 hover:text-primary cursor-pointer"
+          }
+        >
+          Manage Categories
         </Button>
         <Button
           variant={viewMode === "stocks" ? "default" : "outline"}
@@ -367,7 +441,9 @@ export default function ProductManagementPage() {
                 ? "Search products..."
                 : viewMode === "stocks"
                 ? "Search stocks by name or code..."
-                : "Search purchases..."
+                : viewMode === "purchases"
+                ? "Search purchases..."
+                : "Search categories..."
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -380,15 +456,23 @@ export default function ProductManagementPage() {
             onClick={
               viewMode === "products"
                 ? handleAddProduct
-                : () => {
+                : viewMode === "stocks"
+                ? () => {
                     setStockDialogMode("add");
                     setSelectedStock(null);
                     setIsStockDialogOpen(true);
                   }
+                : viewMode === "categories"
+                ? handleAddCategory
+                : undefined
             }
           >
             <Plus className="w-4 h-4" />
-            {viewMode === "products" ? "Add Product" : "Add Stock"}
+            {viewMode === "products"
+              ? "Add Product"
+              : viewMode === "stocks"
+              ? "Add Stock"
+              : "Add Category"}
           </Button>
         )}
       </div>
@@ -412,9 +496,7 @@ export default function ProductManagementPage() {
                     <TableHead className="text-primary">Stock Count</TableHead>
                     <TableHead className="text-primary">Min Purchase</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
-                    <TableHead className="text-primary text-right">
-                      Actions
-                    </TableHead>
+                    <TableHead className="text-primary text-right"></TableHead>
                   </>
                 ) : viewMode === "stocks" ? (
                   <>
@@ -422,11 +504,9 @@ export default function ProductManagementPage() {
                     <TableHead className="text-primary">Redeem Code</TableHead>
                     <TableHead className="text-primary">Added Date</TableHead>
                     <TableHead className="text-primary">Status</TableHead>
-                    <TableHead className="text-primary text-right">
-                      Actions
-                    </TableHead>
+                    <TableHead className="text-primary text-right"></TableHead>
                   </>
-                ) : (
+                ) : viewMode === "purchases" ? (
                   <>
                     <TableHead className="text-primary">Product</TableHead>
                     <TableHead className="text-primary">Customer</TableHead>
@@ -434,6 +514,15 @@ export default function ProductManagementPage() {
                     <TableHead className="text-primary">Amount</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
                     <TableHead className="text-primary">Date</TableHead>
+                  </>
+                ) : (
+                  <>
+                    <TableHead className="text-primary w-10">Icon</TableHead>
+                    <TableHead className="text-primary pl-5 w-80">
+                      Category Name
+                    </TableHead>
+                    <TableHead className="text-primary">Total Stock</TableHead>
+                    <TableHead className="text-primary text-right"></TableHead>
                   </>
                 )}
               </TableRow>
@@ -444,7 +533,6 @@ export default function ProductManagementPage() {
                     const stockCount = stocks.filter(
                       (s) => s.productId === product._id
                     ).length;
-                    // Calculate average rating for this specific product
                     const productPurchases = purchases.filter(
                       (p) => p.productId === product._id && p.rating !== null
                     );
@@ -532,7 +620,7 @@ export default function ProductManagementPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => handleEditProduct(product)}
-                                className=" focus:bg-stone-800 focus:text-primary"
+                                className="focus:bg-stone-800 focus:text-primary"
                               >
                                 <Edit2 className="w-4 h-4 mr-2" />
                                 Edit
@@ -590,9 +678,9 @@ export default function ProductManagementPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               onClick={() => handleEditStock(stock)}
-                              className=" focus:bg-stone-800 focus:text-primary"
+                              className="focus:bg-stone-800 focus:text-primary"
                             >
-                              <Edit2 className="w-4 h-4 mr-2 " />
+                              <Edit2 className="w-4 h-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
@@ -607,10 +695,11 @@ export default function ProductManagementPage() {
                       </TableCell>
                     </TableRow>
                   ))
-                : (paginatedData as PurchaseWithDetails[]).map((purchase) => (
+                : viewMode === "purchases"
+                ? (paginatedData as PurchaseWithDetails[]).map((purchase) => (
                     <TableRow
                       key={purchase._id}
-                      className="border-white/10 hover:bg-white/5 transition"
+                      className="border-white/10 hover:bg-white/5 transition h-12"
                     >
                       <TableCell className="font-medium text-primary">
                         {purchase.productName}
@@ -642,7 +731,64 @@ export default function ProductManagementPage() {
                         {purchase.createdAt.toLocaleDateString("id-ID")}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ))
+                : (paginatedData as CategoryWithStockCount[]).map(
+                    (category) => (
+                      <TableRow
+                        key={category._id}
+                        className="border-white/10 hover:bg-white/5 transition"
+                      >
+                        <TableCell className="text-center">
+                          <img
+                            src={category.icon}
+                            alt={category.name}
+                            className="w-7 h-7 object-cover mx-auto rounded-lg border border-stone-700"
+                            onError={(e) => {
+                              e.currentTarget.src =
+                                "https://via.placeholder.com/48?text=No+Image";
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium text-primary pl-5">
+                          {category.name}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30">
+                            {category.stockCount} items
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-primary hover:text-primary hover:bg-primary/10"
+                              >
+                                <Ellipsis className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleEditCategory(category)}
+                                className="focus:bg-stone-800 focus:text-primary"
+                              >
+                                <Edit2 className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteCategory(category)}
+                                className="text-red-400 focus:bg-stone-800 focus:text-red-400"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  )}
             </TableBody>
           </Table>
         )}
@@ -700,6 +846,7 @@ export default function ProductManagementPage() {
         onOpenChange={setIsProductDialogOpen}
         onSubmit={onProductSubmit}
         initialData={selectedProduct || undefined}
+        categories={categories}
       />
 
       <StockDialog
@@ -716,15 +863,31 @@ export default function ProductManagementPage() {
         initialData={selectedStock}
       />
 
+      <CategoryDialog
+        open={isCategoryDialogOpen}
+        mode={categoryDialogMode}
+        onOpenChange={setIsCategoryDialogOpen}
+        onSubmit={onCategorySubmit}
+        initialData={selectedCategory || undefined}
+      />
+
       <DeleteDialog
         open={isDeleteOpen}
         onOpenChange={setIsDeleteOpen}
         onConfirm={onDeleteConfirm}
-        title={`Delete ${deleteTarget === "product" ? "Product" : "Stock"}`}
+        title={`Delete ${
+          deleteTarget === "product"
+            ? "Product"
+            : deleteTarget === "stock"
+            ? "Stock"
+            : "Category"
+        }`}
         description={
           deleteTarget === "product"
             ? `Are you sure you want to delete "${selectedProduct?.name}"? All associated stocks will also be deleted. This action cannot be undone.`
-            : `Are you sure you want to delete stock "${selectedStock?.redeemCode}"? This action cannot be undone.`
+            : deleteTarget === "stock"
+            ? `Are you sure you want to delete stock "${selectedStock?.redeemCode}"? This action cannot be undone.`
+            : `Are you sure you want to delete category "${selectedCategory?.name}"? This action cannot be undone.`
         }
       />
     </div>

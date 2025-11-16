@@ -1,8 +1,8 @@
-// lib/types/index.ts
 export interface UserDocument {
   _id: string;
   username: string;
   email: string;
+  phoneNumber: string;
   password: string;
   role: "admin" | "user";
   joinDate: Date;
@@ -14,8 +14,28 @@ export interface UserProfile {
   _id: string;
   username: string;
   email: string;
+  phoneNumber: string;
   role: "admin" | "user";
   joinDate: Date;
+}
+
+export interface CategoryDocument {
+  _id: string;
+  name: string;
+  icon: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateCategoryInput {
+  name: string;
+  icon: string;
+}
+
+export interface UpdateCategoryInput extends Partial<CreateCategoryInput> { }
+
+export interface CategoryWithStockCount extends CategoryDocument {
+  stockCount: number;
 }
 
 export interface ProductDocument {
@@ -24,6 +44,7 @@ export interface ProductDocument {
   price: number;
   minimumPurchase: number;
   description: string;
+  categoryId: string;
   cpuCore: string;
   android: string;
   ram: string;
@@ -41,6 +62,7 @@ export interface CreateProductInput {
   price: number;
   minimumPurchase: number;
   description: string;
+  categoryId: string;
   cpuCore: string;
   android: string;
   ram: string;
@@ -74,12 +96,15 @@ export interface StockWithProductInfo extends StockDocument {
   isAvailable: boolean;
 }
 
+// MAIN PURCHASE DOCUMENT - CONSOLIDATED
 export interface PurchaseDocument {
   _id: string;
   userId: string;
   productId: string;
   stockId: string;
+  quantity: number; // NEW - for bulk purchases
   totalPaid: number;
+  paymentStatus: "pending" | "completed" | "failed"; // NEW - tracks payment
   rating: number | null; // 1-5 or null if not rated
   createdAt: Date;
   updatedAt: Date;

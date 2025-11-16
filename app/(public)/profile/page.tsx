@@ -31,6 +31,7 @@ import {
   X,
   Mail,
   User,
+  Phone,
 } from "lucide-react";
 import { UserService } from "@/lib/db/users";
 import { PurchaseService } from "@/lib/db/purchases";
@@ -42,6 +43,7 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedUsername, setEditedUsername] = useState("");
+  const [editedPhoneNumber, setEditedPhoneNumber] = useState(""); // NEW
   const [stats, setStats] = useState({
     totalSpent: 0,
     totalPurchases: 0,
@@ -53,10 +55,8 @@ export default function UserProfilePage() {
   >({});
   const ITEMS_PER_PAGE = 10;
 
-  // Mock user ID - in real app, this would come from auth context
   const userId = "user_002";
 
-  // Fetch user purchases and stats
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -70,12 +70,12 @@ export default function UserProfilePage() {
         if (userData) {
           setUser(userData);
           setEditedUsername(userData.username);
+          setEditedPhoneNumber(userData.phoneNumber); // NEW
         }
 
         setPurchases(userPurchases);
         setStats(userStats);
 
-        // Initialize rating states
         const initialRatings: Record<string, number | null> = {};
         userPurchases.forEach((purchase) => {
           initialRatings[purchase._id] = purchase.rating;
@@ -98,13 +98,11 @@ export default function UserProfilePage() {
         [purchaseId]: rating,
       }));
 
-      // Update purchases list
       const updated = purchases.map((p) =>
         p._id === purchaseId ? { ...p, rating } : p
       );
       setPurchases(updated);
 
-      // Recalculate stats
       const ratedPurchases = updated.filter((p) => p.rating !== null);
       const avgRating =
         ratedPurchases.length > 0
@@ -127,13 +125,11 @@ export default function UserProfilePage() {
         [purchaseId]: null,
       }));
 
-      // Update purchases list
       const updated = purchases.map((p) =>
         p._id === purchaseId ? { ...p, rating: null } : p
       );
       setPurchases(updated);
 
-      // Recalculate stats
       const ratedPurchases = updated.filter((p) => p.rating !== null);
       const avgRating =
         ratedPurchases.length > 0
@@ -151,17 +147,22 @@ export default function UserProfilePage() {
   const handleSaveUsername = async () => {
     try {
       if (user && editedUsername.trim()) {
-        setUser({ ...user, username: editedUsername });
+        setUser({
+          ...user,
+          username: editedUsername,
+          phoneNumber: editedPhoneNumber, // NEW
+        });
         setIsEditing(false);
       }
     } catch (error) {
-      console.error("Failed to update username:", error);
+      console.error("Failed to update profile:", error);
     }
   };
 
   const handleCancelEdit = () => {
     if (user) {
       setEditedUsername(user.username);
+      setEditedPhoneNumber(user.phoneNumber); // NEW
     }
     setIsEditing(false);
   };
@@ -196,12 +197,12 @@ export default function UserProfilePage() {
                 className="bg-primary text-black hover:bg-stone-400 gap-2"
               >
                 <Edit2 className="w-4 h-4" />
-                Edit Username
+                Edit Profile
               </Button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {/* Username */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
@@ -232,6 +233,27 @@ export default function UserProfilePage() {
                 )}
               </label>
               <p className="text-lg text-primary font-medium">{user.email}</p>
+            </div>
+
+            {/* Phone Number - NEW */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-primary flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                Phone Number
+              </label>
+              {isEditing ? (
+                <Input
+                  value={editedPhoneNumber}
+                  onChange={(e) => setEditedPhoneNumber(e.target.value)}
+                  className="bg-stone-800/30 border-white/10"
+                  placeholder="Enter phone number"
+                  type="tel"
+                />
+              ) : (
+                <p className="text-lg text-primary font-medium">
+                  {user.phoneNumber}
+                </p>
+              )}
             </div>
 
             {/* Join Date */}

@@ -1,4 +1,4 @@
-// components/shared/Product-card.tsx
+// components/shared/product-card.tsx
 "use client";
 
 import { Badge } from "../ui/badge";
@@ -14,6 +14,7 @@ interface SpecItem {
 }
 
 interface ProductCardProps {
+  _id: string; // productId - REQUIRED
   name: string;
   price: string;
   stock: number;
@@ -29,9 +30,11 @@ interface ProductCardProps {
   rating?: number;
   reviews?: number;
   isLoggedIn?: boolean;
+  minimumPurchase?: number;
 }
 
 export function ProductCard({
+  _id,
   name,
   price,
   isMostPopular,
@@ -47,21 +50,28 @@ export function ProductCard({
   rating = 4.8,
   reviews = 6521,
   isLoggedIn = false,
+  minimumPurchase = 1,
 }: ProductCardProps) {
   const router = useRouter();
 
-  const handleAddToCart = useCallback(() => {
+  const handleBuyNow = useCallback(() => {
+    console.log("🛒 Buy Now clicked!");
+    console.log("📦 Product ID:", _id);
+    console.log("🔐 Is Logged In:", isLoggedIn);
+    console.log("🍪 Cookies:", document.cookie);
+
+    // If not logged in, go to login
     if (!isLoggedIn) {
-      // Redirect to login if not logged in
+      console.log("❌ User not logged in - redirecting to /login");
       router.push("/login");
       return;
     }
 
-    // Call the onBuy callback if user is logged in
-    if (onBuy) {
-      onBuy();
-    }
-  }, [isLoggedIn, router, onBuy]);
+    // Navigate to checkout
+    const checkoutUrl = `/checkout?productId=${_id}`;
+    console.log("✅ User logged in - navigating to:", checkoutUrl);
+    router.push(checkoutUrl);
+  }, [isLoggedIn, _id, router]);
 
   const specs: SpecItem[] = [
     { icon: <Cpu className="w-4 h-4" />, label: cpuCore },
@@ -74,7 +84,7 @@ export function ProductCard({
 
   return (
     <div
-      className="border bg-stone-900/30 rounded-lg py-6 px-8 hover:border-white/20 transition"
+      className="border bg-stone-900/40 rounded-lg py-6 px-8 hover:border-white/20 transition"
       style={{ borderColor: "rgba(255, 255, 255, 0.1)" }}
     >
       {/* Header with Name and Badge */}
@@ -118,10 +128,10 @@ export function ProductCard({
       <CustomButton
         disabled={isOutOfStock}
         variant="white"
-        onClick={handleAddToCart}
+        onClick={handleBuyNow}
         className="rounded-full"
       >
-        {isOutOfStock ? "Out of Stock" : "Add to Cart"}
+        {isOutOfStock ? "Out of Stock" : "Buy Now"}
       </CustomButton>
 
       <div className=" w-full h-px bg-white/15 my-5"></div>

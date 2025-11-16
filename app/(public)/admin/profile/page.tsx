@@ -30,6 +30,7 @@ import {
   Save,
   X,
   Clock,
+  Phone,
 } from "lucide-react";
 import { UserService } from "@/lib/db/users";
 import { UserDocument, UserProfile } from "@/lib/types";
@@ -47,7 +48,6 @@ export default function AdminProfilePage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Get the first admin user from mock data
         const allUsersData = await UserService.getAllUsers();
         const admin = allUsersData.find((u) => u.role === "admin");
 
@@ -56,7 +56,6 @@ export default function AdminProfilePage() {
           setEditedData(admin);
         }
 
-        // Get all user profiles
         const profiles = await UserService.getAllUserProfiles();
         setAllUsers(profiles);
       } catch (error) {
@@ -78,7 +77,6 @@ export default function AdminProfilePage() {
   const handleSave = async () => {
     if (!adminUser) return;
     try {
-      // In a real app, this would call an update API
       setAdminUser(editedData as UserDocument);
       setIsEditing(false);
     } catch (error) {
@@ -106,12 +104,6 @@ export default function AdminProfilePage() {
       </div>
     );
   }
-
-  const userStats = {
-    totalUsers: allUsers.length,
-    adminCount: allUsers.filter((u) => u.role === "admin").length,
-    userCount: allUsers.filter((u) => u.role === "user").length,
-  };
 
   return (
     <div className="pt-10 pb-10 px-8 max-w-7xl mx-auto flex flex-col items-center">
@@ -203,6 +195,29 @@ export default function AdminProfilePage() {
               ) : (
                 <div className="bg-stone-800/30 border border-white/10 rounded px-3 py-2 text-primary">
                   {adminUser.email}
+                </div>
+              )}
+            </div>
+
+            {/* Phone Number - NEW */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-primary flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                Phone Number
+              </label>
+              {isEditing ? (
+                <Input
+                  value={editedData.phoneNumber || ""}
+                  onChange={(e) =>
+                    handleEditChange("phoneNumber", e.target.value)
+                  }
+                  className="bg-stone-800/30 border-white/10"
+                  placeholder="Enter phone number"
+                  type="tel"
+                />
+              ) : (
+                <div className="bg-stone-800/30 border border-white/10 rounded px-3 py-2 text-primary">
+                  {adminUser.phoneNumber}
                 </div>
               )}
             </div>

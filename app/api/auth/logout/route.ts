@@ -1,4 +1,3 @@
-// app/api/auth/logout/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
@@ -8,10 +7,10 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-    // Clear all auth cookies
     response.cookies.set('auth-token', '', { maxAge: 0 });
     response.cookies.set('user-role', '', { maxAge: 0 });
     response.cookies.set('user-id', '', { maxAge: 0 });
+    response.cookies.set('user-phone', '', { maxAge: 0 }); // NEW
 
     return response;
   } catch (error) {
@@ -29,10 +28,10 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
 
-    // Clear all auth cookies
     response.cookies.set('auth-token', '', { maxAge: 0 });
     response.cookies.set('user-role', '', { maxAge: 0 });
     response.cookies.set('user-id', '', { maxAge: 0 });
+    response.cookies.set('user-phone', '', { maxAge: 0 }); // NEW
 
     return response;
   } catch (error) {

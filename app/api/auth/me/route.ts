@@ -1,10 +1,8 @@
-// app/api/auth/me/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { UserService } from "@/lib/db/users";
 
 export async function GET(request: NextRequest) {
   try {
-    // Get the auth token from cookies
     const token = request.cookies.get("auth-token")?.value;
 
     if (!token) {
@@ -14,7 +12,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch user by ID using the token
     const user = await UserService.findById(token);
 
     if (!user) {
@@ -28,6 +25,7 @@ export async function GET(request: NextRequest) {
       _id: user._id,
       username: user.username,
       email: user.email,
+      phoneNumber: user.phoneNumber, // NEW
       role: user.role,
     });
   } catch (error) {

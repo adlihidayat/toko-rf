@@ -1,9 +1,73 @@
-
-// lib/db/purchases.ts
 import { PurchaseDocument, PurchaseWithDetails } from "@/lib/types";
 import { MOCK_PURCHASES, MOCK_PRODUCTS, MOCK_STOCKS, MOCK_USERS } from "./mock-data";
 
 export class PurchaseService {
+  /**
+   * Create a pending purchase (called before payment)
+   */
+  static async createPendingPurchase(
+    userId: string,
+    productId: string,
+    stockId: string,
+    quantity: number,
+    totalPaid: number
+  ): Promise<PurchaseDocument> {
+    const purchase: PurchaseDocument = {
+      _id: `purchase_${Date.now()}`,
+      userId,
+      productId,
+      stockId,
+      quantity,
+      totalPaid,
+      paymentStatus: "pending", // Will be updated after payment
+      rating: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    MOCK_PURCHASES.push(purchase);
+    return purchase;
+  }
+
+  /**
+   * Update purchase payment status
+   */
+  static async updatePurchaseStatus(
+    purchaseId: string,
+    status: "pending" | "completed" | "failed"
+  ): Promise<PurchaseDocument | null> {
+    const index = MOCK_PURCHASES.findIndex((p) => p._id === purchaseId);
+    if (index === -1) return null;
+
+    MOCK_PURCHASES[index] = {
+      ...MOCK_PURCHASES[index],
+      paymentStatus: status,
+      updatedAt: new Date(),
+    };
+    return MOCK_PURCHASES[index];
+  }
+
+  /**
+   * Get pending purchases for a user
+   */
+  static async getPendingPurchases(userId: string): Promise<PurchaseWithDetails[]> {
+    const purchases = MOCK_PURCHASES.filter(
+      (p) => p.userId === userId && p.paymentStatus === "pending"
+    );
+
+    return purchases.map((purchase) => {
+      const product = MOCK_PRODUCTS.find((p) => p._id === purchase.productId);
+      const stock = MOCK_STOCKS.find((s) => s._id === purchase.stockId);
+      return {
+        ...purchase,
+        productName: product?.name || "Unknown",
+        productPrice: product?.price || 0,
+        redeemCode: stock?.redeemCode || "Unknown",
+        userName: "User",
+      };
+    });
+  }
+
   /**
    * Get purchase history for a user
    */
@@ -92,11 +156,19 @@ export class PurchaseService {
     const totalSales = purchases.reduce((sum, p) => sum + p.totalPaid, 0);
     const totalTransactions = purchases.length;
     const ratedCount = purchases.filter((p) => p.rating !== null).length;
+    const completedTransactions = purchases.filter(
+      (p) => p.paymentStatus === "completed"
+    ).length;
+    const pendingTransactions = purchases.filter(
+      (p) => p.paymentStatus === "pending"
+    ).length;
 
     return {
       totalSales,
       totalTransactions,
       ratedCount,
+      completedTransactions,
+      pendingTransactions,
     };
   }
 }
