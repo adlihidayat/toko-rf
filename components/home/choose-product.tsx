@@ -1,12 +1,12 @@
-// components/home/choose-package.tsx
+// components/home/choose-Product.tsx
 "use client";
 import Link from "next/link";
-import { PackageCard } from "../shared/package-card";
+import { ProductCard } from "../shared/product-card";
 import { CustomButton } from "../ui/custom-button";
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-const packages = [
+const Products = [
   {
     name: "VIP 7 DAY",
     price: "Rp 19.300",
@@ -54,12 +54,12 @@ const packages = [
   },
 ];
 
-export function ChoosePackage() {
+export function ChooseProduct() {
   const isLoggedIn = false; // TODO: Get this from your auth context/state
   const router = useRouter();
 
-  const handleBuyPackage = useCallback((packageName: string) => {
-    console.log(`Bought ${packageName}`);
+  const handleBuyProduct = useCallback((ProductName: string) => {
+    console.log(`Bought ${ProductName}`);
     // TODO: Add to cart logic here
   }, []);
 
@@ -67,6 +67,9 @@ export function ChoosePackage() {
     if (!isLoggedIn) {
       // Redirect to login if not logged in
       router.push("/login");
+      return;
+    } else {
+      router.push("/products");
       return;
     }
 
@@ -77,7 +80,7 @@ export function ChoosePackage() {
   }, [isLoggedIn, router]);
 
   return (
-    <section id="choose-package" className="py-20 px-8">
+    <section id="choose-Product" className="py-20 px-8">
       <div className="max-w-6xl mx-auto">
         {/* Section Header */}
         <div className="text-center mb-20">
@@ -93,17 +96,17 @@ export function ChoosePackage() {
             </span>
           </div>
           <h2 className="text-2xl lg:text-4xl font-bold tracking-tight text-center mb-4 text-primary">
-            Choose Your Package
+            Choose Your Product
           </h2>
           <p className="text-lg text-secondary max-w-2xl mx-auto">
             Select the VIP duration that suits your needs
           </p>
         </div>
 
-        {/* Package Cards Grid */}
+        {/* Product Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-          {packages.map((pkg, index) => (
-            <PackageCard
+          {Products.map((pkg, index) => (
+            <ProductCard
               key={index}
               name={pkg.name}
               price={pkg.price}
@@ -119,7 +122,7 @@ export function ChoosePackage() {
               rating={pkg.rating}
               reviews={pkg.reviews}
               isLoggedIn={isLoggedIn}
-              onBuy={() => handleBuyPackage(pkg.name)}
+              onBuy={() => handleBuyProduct(pkg.name)}
             />
           ))}
         </div>
@@ -131,7 +134,7 @@ export function ChoosePackage() {
             onClick={handleBrowseMore}
             className=" w-52 rounded-lg"
           >
-            Browse More Packages
+            Browse More Products
           </CustomButton>
         </div>
       </div>

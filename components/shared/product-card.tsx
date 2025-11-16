@@ -1,4 +1,4 @@
-// components/shared/package-card.tsx
+// components/shared/Product-card.tsx
 "use client";
 
 import { Badge } from "../ui/badge";
@@ -13,7 +13,7 @@ interface SpecItem {
   label: string;
 }
 
-interface PackageCardProps {
+interface ProductCardProps {
   name: string;
   price: string;
   stock: number;
@@ -31,7 +31,7 @@ interface PackageCardProps {
   isLoggedIn?: boolean;
 }
 
-export function PackageCard({
+export function ProductCard({
   name,
   price,
   isMostPopular,
@@ -47,7 +47,7 @@ export function PackageCard({
   rating = 4.8,
   reviews = 6521,
   isLoggedIn = false,
-}: PackageCardProps) {
+}: ProductCardProps) {
   const router = useRouter();
 
   const handleAddToCart = useCallback(() => {

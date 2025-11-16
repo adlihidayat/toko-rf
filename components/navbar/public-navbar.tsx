@@ -29,7 +29,7 @@ export function PublicNavbar() {
               Home
             </a>
             <button
-              onClick={() => scrollToSection("choose-package")}
+              onClick={() => scrollToSection("choose-Product")}
               className="text-[#a1a1a1] hover:text-[#ededed] transition cursor-pointer"
             >
               Product List

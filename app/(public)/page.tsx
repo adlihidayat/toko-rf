@@ -5,7 +5,7 @@ import Link from "next/link";
 import { WhyChooseUs } from "@/components/home/why-choose-us";
 import { HeroSection } from "@/components/home/hero";
 import { WhatIsRedfinger } from "@/components/home/what-is-redfinger";
-import { ChoosePackage } from "@/components/home/choose-package";
+import { ChooseProduct } from "@/components/home/choose-product";
 import { ReadyToStart } from "@/components/home/ready-to-start";
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
       <HeroSection />
       <WhyChooseUs />
       <WhatIsRedfinger />
-      <ChoosePackage />
+      <ChooseProduct />
       <ReadyToStart />
     </main>
   );

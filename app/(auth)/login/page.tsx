@@ -43,7 +43,7 @@ export default function LoginPage() {
       if (data.user.role === "admin") {
         router.push("/admin/products-management");
       } else {
-        router.push("/dashboard");
+        router.push("/");
       }
     } catch (err) {
       setError("Login failed. Please try again.");
