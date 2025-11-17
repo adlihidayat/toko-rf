@@ -28,12 +28,14 @@ import { Badge } from "@/components/ui/badge";
 import { CustomButton } from "@/components/ui/custom-button";
 import { UserDocument, PurchaseWithDetails } from "@/lib/types";
 import { Star } from "lucide-react";
+import { toDate } from "@/lib/utils/date";
 
 interface UserEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (role: "admin" | "user") => Promise<void>;
   user: UserDocument | null;
+  isLoading?: boolean;
 }
 
 interface UserDetailDialogProps {
@@ -49,6 +51,7 @@ interface DeleteDialogProps {
   onConfirm: () => Promise<void>;
   title: string;
   description: string;
+  isLoading?: boolean;
 }
 
 export function UserEditDialog({
@@ -56,9 +59,10 @@ export function UserEditDialog({
   onOpenChange,
   onSubmit,
   user,
+  isLoading = false,
 }: UserEditDialogProps) {
   const [role, setRole] = useState<"admin" | "user">("user");
-  const [isLoading, setIsLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
 
   useEffect(() => {
     if (open && user) {
@@ -67,14 +71,15 @@ export function UserEditDialog({
   }, [open, user]);
 
   const handleSubmit = async () => {
-    setIsLoading(true);
+    setLocalLoading(true);
     try {
       await onSubmit(role);
-      onOpenChange(false);
     } finally {
-      setIsLoading(false);
+      setLocalLoading(false);
     }
   };
+
+  const isProcessing = isLoading || localLoading;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -95,15 +100,25 @@ export function UserEditDialog({
             <p className="text-sm font-medium text-primary mb-3 block">
               User Role
             </p>
-            <Select value={role} onValueChange={(value: any) => setRole(value)}>
+            <Select
+              value={role}
+              onValueChange={(value: any) => setRole(value)}
+              disabled={isProcessing}
+            >
               <SelectTrigger className="bg-stone-900/50 border-stone-800 text-primary h-10">
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent className="bg-stone-900 border-stone-800">
-                <SelectItem value="user" className="text-primary">
+                <SelectItem
+                  value="user"
+                  className="text-primary focus:bg-stone-700 focus:text-white"
+                >
                   User
                 </SelectItem>
-                <SelectItem value="admin" className="text-primary">
+                <SelectItem
+                  value="admin"
+                  className="text-primary focus:bg-stone-700 focus:text-white"
+                >
                   Admin
                 </SelectItem>
               </SelectContent>
@@ -116,7 +131,7 @@ export function UserEditDialog({
             <CustomButton
               variant="black"
               onClick={() => onOpenChange(false)}
-              disabled={isLoading}
+              disabled={isProcessing}
               className="flex-1"
             >
               Cancel
@@ -124,10 +139,10 @@ export function UserEditDialog({
             <CustomButton
               variant="white"
               onClick={handleSubmit}
-              disabled={isLoading}
+              disabled={isProcessing || role === user?.role}
               className="flex-1"
             >
-              {isLoading ? "Saving..." : "Update"}
+              {isProcessing ? "Saving..." : "Update"}
             </CustomButton>
           </div>
         </DialogFooter>
@@ -144,6 +159,10 @@ export function UserDetailDialog({
 }: UserDetailDialogProps) {
   const totalSpent = userPurchases.reduce((sum, p) => sum + p.totalPaid, 0);
   const totalTransactions = userPurchases.length;
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -164,12 +183,12 @@ export function UserDetailDialog({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-secondary mb-1">User ID</p>
-                <p className="font-mono text-sm text-primary">{user?._id}</p>
+                <p className="font-mono text-sm text-primary">{user._id}</p>
               </div>
               <div>
                 <p className="text-xs text-secondary mb-1">Username</p>
                 <p className="text-sm text-primary font-medium">
-                  {user?.username}
+                  {user.username}
                 </p>
               </div>
             </div>
@@ -177,35 +196,40 @@ export function UserDetailDialog({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-secondary mb-1">Email</p>
-                <p className="text-sm text-primary">{user?.email}</p>
+                <p className="text-sm text-primary">{user.email}</p>
               </div>
               <div>
                 <p className="text-xs text-secondary mb-1">Role</p>
                 <Badge
                   className={
-                    user?.role === "admin"
+                    user.role === "admin"
                       ? "bg-blue-500/20 text-blue-300 border-blue-500/30 w-fit"
                       : "bg-purple-500/20 text-purple-300 border-purple-500/30 w-fit"
                   }
                 >
-                  {user?.role === "admin" ? "Admin" : "User"}
+                  {user.role === "admin" ? "Admin" : "User"}
                 </Badge>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-secondary mb-1">Join Date</p>
-                <p className="text-sm text-primary">
-                  {user?.joinDate.toLocaleDateString("id-ID")}
-                </p>
+                <p className="text-xs text-secondary mb-1">Phone Number</p>
+                <p className="text-sm text-primary">{user.phoneNumber}</p>
               </div>
               <div>
-                <p className="text-xs text-secondary mb-1">Account Created</p>
+                <p className="text-xs text-secondary mb-1">Join Date</p>
                 <p className="text-sm text-primary">
-                  {user?.createdAt.toLocaleDateString("id-ID")}
+                  {toDate(user.joinDate).toLocaleDateString("id-ID")}
                 </p>
               </div>
+            </div>
+
+            <div>
+              <p className="text-xs text-secondary mb-1">Account Created</p>
+              <p className="text-sm text-primary">
+                {toDate(user.createdAt).toLocaleDateString("id-ID")}
+              </p>
             </div>
           </div>
 
@@ -244,7 +268,7 @@ export function UserDetailDialog({
                   Purchase History
                 </h3>
 
-                <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                <div className="space-y-3 max-h-[300px] overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-stone-600 [&::-webkit-scrollbar-thumb]:rounded-full">
                   {userPurchases.map((purchase) => (
                     <div
                       key={purchase._id}
@@ -255,7 +279,7 @@ export function UserDetailDialog({
                           <p className="text-sm font-medium text-primary">
                             {purchase.productName}
                           </p>
-                          <p className="text-xs text-secondary">
+                          <p className="text-xs text-secondary font-mono">
                             {purchase.redeemCode}
                           </p>
                         </div>
@@ -266,9 +290,12 @@ export function UserDetailDialog({
 
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-secondary">
-                          {purchase.createdAt.toLocaleDateString("id-ID")}
+                          {toDate(purchase.createdAt).toLocaleDateString(
+                            "id-ID"
+                          )}
                         </p>
-                        {purchase.rating !== null ? (
+                        {purchase.rating !== null &&
+                        purchase.rating !== undefined ? (
                           <div className="flex items-center gap-1">
                             <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
                             <span className="text-xs text-primary">
@@ -286,6 +313,14 @@ export function UserDetailDialog({
                 </div>
               </div>
             </>
+          )}
+
+          {userPurchases.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-sm text-secondary">
+                No purchase history available
+              </p>
+            </div>
           )}
         </div>
 
@@ -309,18 +344,20 @@ export function DeleteDialog({
   onConfirm,
   title,
   description,
+  isLoading = false,
 }: DeleteDialogProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
 
   const handleConfirm = async () => {
-    setIsLoading(true);
+    setLocalLoading(true);
     try {
       await onConfirm();
-      onOpenChange(false);
     } finally {
-      setIsLoading(false);
+      setLocalLoading(false);
     }
   };
+
+  const isProcessing = isLoading || localLoading;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -330,16 +367,19 @@ export function DeleteDialog({
           {description}
         </AlertDialogDescription>
         <div className="flex justify-end gap-2">
-          <AlertDialogCancel disabled={isLoading} className="border-white/10">
+          <AlertDialogCancel
+            disabled={isProcessing}
+            className="border-white/10 text-primary hover:text-primary hover:bg-stone-800 "
+          >
             Cancel
           </AlertDialogCancel>
           <CustomButton
             variant="white"
             onClick={handleConfirm}
-            disabled={isLoading}
-            className="w-auto"
+            disabled={isProcessing}
+            className="w-auto bg-red-500 text-primary hover:bg-red-600"
           >
-            {isLoading ? "Deleting..." : "Delete"}
+            {isProcessing ? "Deleting..." : "Delete"}
           </CustomButton>
         </div>
       </AlertDialogContent>

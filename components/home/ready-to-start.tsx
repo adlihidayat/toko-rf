@@ -21,7 +21,8 @@ export function ReadyToStart() {
             </span>
           </div>
           <h2 className="text-2xl lg:text-4xl font-bold tracking-tight text-center mb-4 text-primary">
-            Join 14,385+ happy customers. Get instant access now!
+            Be part of over 14,385 satisfied customers. Obtain immediate access
+            now
           </h2>
         </div>
 

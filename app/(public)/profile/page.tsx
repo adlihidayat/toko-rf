@@ -1,4 +1,3 @@
-// app/user/profile/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -33,9 +32,8 @@ import {
   User,
   Phone,
 } from "lucide-react";
-import { UserService } from "@/lib/db/users";
-import { PurchaseService } from "@/lib/db/purchases";
 import { PurchaseWithDetails, UserDocument } from "@/lib/types";
+import { toDate, ensureString } from "@/lib/utils/date";
 
 export default function UserProfilePage() {
   const [user, setUser] = useState<UserDocument | null>(null);
@@ -43,7 +41,7 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedUsername, setEditedUsername] = useState("");
-  const [editedPhoneNumber, setEditedPhoneNumber] = useState(""); // NEW
+  const [editedPhoneNumber, setEditedPhoneNumber] = useState("");
   const [stats, setStats] = useState({
     totalSpent: 0,
     totalPurchases: 0,
@@ -55,44 +53,83 @@ export default function UserProfilePage() {
   >({});
   const ITEMS_PER_PAGE = 10;
 
-  const userId = "user_002";
+  const [userId, setUserId] = useState<string | null>(null);
 
+  // Extract userId from cookies
   useEffect(() => {
+    const cookies = document.cookie.split(";");
+    const userIdCookie = cookies
+      .find((cookie) => cookie.trim().startsWith("user-id="))
+      ?.split("=")[1];
+    setUserId(userIdCookie || null);
+    console.log("UserId from cookie:", userIdCookie);
+  }, []);
+
+  // Fetch user data and purchases
+  useEffect(() => {
+    if (!userId) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [userData, userPurchases, userStats] = await Promise.all([
-          UserService.findById(userId),
-          PurchaseService.getUserPurchases(userId),
-          PurchaseService.getUserStats(userId),
+        const [userRes, purchasesRes] = await Promise.all([
+          fetch("/api/auth/me", {
+            credentials: "include",
+          }),
+          fetch(`/api/purchase/user/${userId}`, {
+            credentials: "include",
+          }),
         ]);
+
+        if (!userRes.ok) throw new Error("Failed to fetch user");
+
+        const userData = await userRes.json();
+        const purchasesData = await purchasesRes.json();
 
         if (userData) {
           setUser(userData);
           setEditedUsername(userData.username);
-          setEditedPhoneNumber(userData.phoneNumber); // NEW
+          setEditedPhoneNumber(userData.phoneNumber);
         }
 
-        setPurchases(userPurchases);
-        setStats(userStats);
+        if (purchasesData.success) {
+          console.log("Purchases fetched:", purchasesData.data);
+          setPurchases(purchasesData.data.purchases);
+          setStats(purchasesData.data.stats);
 
-        const initialRatings: Record<string, number | null> = {};
-        userPurchases.forEach((purchase) => {
-          initialRatings[purchase._id] = purchase.rating;
-        });
-        setRatingStates(initialRatings);
+          const initialRatings: Record<string, number | null> = {};
+          purchasesData.data.purchases.forEach(
+            (purchase: PurchaseWithDetails) => {
+              initialRatings[purchase._id ?? ""] = purchase.rating ?? null;
+            }
+          );
+          setRatingStates(initialRatings);
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [userId]);
 
-  const handleRatingChange = async (purchaseId: string, rating: number) => {
+  const handleRatingChange = async (
+    purchaseId: string | undefined,
+    rating: number
+  ) => {
+    if (!purchaseId) return;
+
     try {
-      await PurchaseService.updatePurchaseRating(purchaseId, rating);
+      const response = await fetch(`/api/purchase/${purchaseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update rating");
+
       setRatingStates((prev) => ({
         ...prev,
         [purchaseId]: rating,
@@ -117,9 +154,18 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleRemoveRating = async (purchaseId: string) => {
+  const handleRemoveRating = async (purchaseId: string | undefined) => {
+    if (!purchaseId) return;
+
     try {
-      await PurchaseService.updatePurchaseRating(purchaseId, null);
+      const response = await fetch(`/api/purchase/${purchaseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating: null }),
+      });
+
+      if (!response.ok) throw new Error("Failed to remove rating");
+
       setRatingStates((prev) => ({
         ...prev,
         [purchaseId]: null,
@@ -146,26 +192,44 @@ export default function UserProfilePage() {
 
   const handleSaveUsername = async () => {
     try {
-      if (user && editedUsername.trim()) {
-        setUser({
-          ...user,
+      if (!userId || !editedUsername.trim()) return;
+
+      const response = await fetch(`/api/users/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           username: editedUsername,
-          phoneNumber: editedPhoneNumber, // NEW
-        });
+          phoneNumber: editedPhoneNumber,
+        }),
+      });
+
+      if (response.ok) {
+        const { data } = await response.json();
+        setUser(data);
         setIsEditing(false);
+
+        // ADD THIS LINE - Dispatch event to notify navbar
+        window.dispatchEvent(new Event("profileUpdated"));
       }
     } catch (error) {
       console.error("Failed to update profile:", error);
     }
   };
-
   const handleCancelEdit = () => {
     if (user) {
       setEditedUsername(user.username);
-      setEditedPhoneNumber(user.phoneNumber); // NEW
+      setEditedPhoneNumber(user.phoneNumber);
     }
     setIsEditing(false);
   };
+
+  if (!userId) {
+    return (
+      <div className="pt-10 pb-10 px-8 max-w-7xl mx-auto">
+        <p className="text-secondary">Please log in to view your profile.</p>
+      </div>
+    );
+  }
 
   const totalPages = Math.ceil(purchases.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -235,7 +299,7 @@ export default function UserProfilePage() {
               <p className="text-lg text-primary font-medium">{user.email}</p>
             </div>
 
-            {/* Phone Number - NEW */}
+            {/* Phone Number */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <Phone className="w-4 h-4" />
@@ -263,7 +327,7 @@ export default function UserProfilePage() {
                 Member Since
               </label>
               <p className="text-lg text-primary font-medium">
-                {user.joinDate.toLocaleDateString("id-ID", {
+                {toDate(user.joinDate).toLocaleDateString("id-ID", {
                   year: "numeric",
                   month: "short",
                   day: "numeric",
@@ -371,83 +435,89 @@ export default function UserProfilePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedData.map((purchase) => (
-                <TableRow
-                  key={purchase._id}
-                  className="border-white/10 hover:bg-white/5 transition"
-                >
-                  <TableCell className="font-medium text-primary">
-                    {purchase.productName}
-                  </TableCell>
-                  <TableCell className="text-secondary text-sm font-mono">
-                    {purchase.redeemCode}
-                  </TableCell>
-                  <TableCell className="text-primary">
-                    Rp {purchase.totalPaid.toLocaleString("id-ID")}
-                  </TableCell>
-                  <TableCell className="text-secondary text-sm">
-                    {purchase.createdAt.toLocaleDateString("id-ID", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {ratingStates[purchase._id] ? (
-                        <div className="flex items-center gap-1">
-                          <div className="flex gap-0.5">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <button
-                                key={i}
-                                onClick={() =>
-                                  handleRatingChange(purchase._id, i + 1)
-                                }
-                                className="focus:outline-none transition"
-                              >
-                                <Star
-                                  className={`w-4 h-4 ${
-                                    i < (ratingStates[purchase._id] || 0)
-                                      ? "text-yellow-400 fill-yellow-400"
-                                      : "text-gray-500"
-                                  }`}
-                                />
-                              </button>
-                            ))}
+              {paginatedData.map((purchase) => {
+                const purchaseId = purchase._id ?? "";
+                const createdDate = toDate(purchase.createdAt);
+                const redeemCode = ensureString(purchase.redeemCode);
+
+                return (
+                  <TableRow
+                    key={purchaseId}
+                    className="border-white/10 hover:bg-white/5 transition"
+                  >
+                    <TableCell className="font-medium text-primary">
+                      {purchase.productName}
+                    </TableCell>
+                    <TableCell className="text-secondary text-sm font-mono">
+                      {redeemCode}
+                    </TableCell>
+                    <TableCell className="text-primary">
+                      Rp {purchase.totalPaid.toLocaleString("id-ID")}
+                    </TableCell>
+                    <TableCell className="text-secondary text-sm">
+                      {createdDate.toLocaleDateString("id-ID", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {ratingStates[purchaseId] ? (
+                          <div className="flex items-center gap-1">
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() =>
+                                    handleRatingChange(purchaseId, i + 1)
+                                  }
+                                  className="focus:outline-none transition"
+                                >
+                                  <Star
+                                    className={`w-4 h-4 ${
+                                      i < (ratingStates[purchaseId] || 0)
+                                        ? "text-yellow-400 fill-yellow-400"
+                                        : "text-gray-500"
+                                    }`}
+                                  />
+                                </button>
+                              ))}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveRating(purchaseId)}
+                              className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
+                            >
+                              Remove
+                            </Button>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveRating(purchase._id)}
-                            className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <div className="flex gap-0.5">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <button
-                                key={i}
-                                onClick={() =>
-                                  handleRatingChange(purchase._id, i + 1)
-                                }
-                                className="focus:outline-none transition hover:scale-110"
-                              >
-                                <Star className="w-4 h-4 text-gray-500 hover:text-yellow-400" />
-                              </button>
-                            ))}
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() =>
+                                    handleRatingChange(purchaseId, i + 1)
+                                  }
+                                  className="focus:outline-none transition hover:scale-110"
+                                >
+                                  <Star className="w-4 h-4 text-gray-500 hover:text-yellow-400" />
+                                </button>
+                              ))}
+                            </div>
+                            <span className="text-secondary text-xs">
+                              Rate this
+                            </span>
                           </div>
-                          <span className="text-secondary text-xs">
-                            Rate this
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

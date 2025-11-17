@@ -4,8 +4,16 @@
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { scrollToSection } from "@/lib/scroll-utils";
+import { useRouter } from "next/navigation";
 
 export function PublicNavbar() {
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
   return (
     <nav className="fixed top-0 w-full border-b border-white/10 bg-black z-50">
       <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
@@ -57,6 +65,14 @@ export function PublicNavbar() {
               Sign Up
             </Button>
           </Link>
+
+          {/* <Button
+            onClick={handleLogout}
+            variant="outline"
+            className="border-2 border-border-2 bg-transparent text-primary hover:text-primary hover:bg-white/10 text-sm font-medium rounded-sm leading-0 pt-3.5 pb-4 h-fit"
+          >
+            Logout
+          </Button> */}
         </div>
       </div>
     </nav>

@@ -25,23 +25,35 @@ export function UserNavbar() {
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch user profile
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        setIsLoadingProfile(true);
-        const response = await fetch("/api/auth/me");
-        if (response.ok) {
-          const data = await response.json();
-          setUserProfile(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch user profile:", error);
-      } finally {
-        setIsLoadingProfile(false);
+  const fetchUserProfile = async () => {
+    try {
+      setIsLoadingProfile(true);
+      const response = await fetch("/api/auth/me");
+      if (response.ok) {
+        const data = await response.json();
+        setUserProfile(data);
       }
+    } catch (error) {
+      console.error("Failed to fetch user profile:", error);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+
+  // Initial fetch
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  // Listen for profile updates
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      fetchUserProfile();
     };
 
-    fetchUserProfile();
+    window.addEventListener("profileUpdated", handleProfileUpdate);
+    return () =>
+      window.removeEventListener("profileUpdated", handleProfileUpdate);
   }, []);
 
   // Close profile dropdown when clicking outside
@@ -147,9 +159,11 @@ export function UserNavbar() {
             <span className="text-[#ededed] text-sm font-medium">
               {isLoadingProfile ? "Loading..." : displayName}
             </span>
-            <div className="rounded-full h-6 w-6 bg-stone-400 flex items-center justify-center">
-              <User className="w-3 h-3 text-black" />
-            </div>
+            <img
+              src="https://avatars.githubusercontent.com/u/124599?v=4"
+              alt=""
+              className="rounded-full h-6 w-6 bg-primary flex items-center justify-center"
+            />
           </button>
 
           {/* Profile Dropdown Menu */}
@@ -204,7 +218,7 @@ export function UserNavbar() {
 
       {/* Mobile Full-Screen Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 top-16 bg-black/95 z-40">
+        <div className="md:hidden fixed inset-0 top-14 bg-black/95 z-40">
           <div className="flex flex-col gap-4 p-8">
             {/* Home Link */}
             <Link

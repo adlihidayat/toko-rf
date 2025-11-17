@@ -1,5 +1,6 @@
+// app/api/auth/me/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { UserService } from "@/lib/db/users";
+import { UserService } from "@/lib/db/services/users";
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,11 +23,12 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      _id: user._id,
+      _id: (user._id as any).toString?.() || user._id,
       username: user.username,
       email: user.email,
-      phoneNumber: user.phoneNumber, // NEW
+      phoneNumber: user.phoneNumber,
       role: user.role,
+      joinDate: user.joinDate,
     });
   } catch (error) {
     console.error("Auth error:", error);

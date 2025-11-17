@@ -54,11 +54,20 @@ export function ProductCard({
 }: ProductCardProps) {
   const router = useRouter();
 
+  // Determine if button should be disabled
+  const isDisabled = isOutOfStock || stock === 0;
+
   const handleBuyNow = useCallback(() => {
     console.log("🛒 Buy Now clicked!");
     console.log("📦 Product ID:", _id);
+    console.log("📊 Stock:", stock);
     console.log("🔐 Is Logged In:", isLoggedIn);
-    console.log("🍪 Cookies:", document.cookie);
+
+    // If out of stock, do nothing
+    if (isDisabled) {
+      console.log("❌ Product out of stock");
+      return;
+    }
 
     // If not logged in, go to login
     if (!isLoggedIn) {
@@ -71,7 +80,7 @@ export function ProductCard({
     const checkoutUrl = `/checkout?productId=${_id}`;
     console.log("✅ User logged in - navigating to:", checkoutUrl);
     router.push(checkoutUrl);
-  }, [isLoggedIn, _id, router]);
+  }, [isLoggedIn, _id, router, isDisabled]);
 
   const specs: SpecItem[] = [
     { icon: <Cpu className="w-4 h-4" />, label: cpuCore },
@@ -84,8 +93,9 @@ export function ProductCard({
 
   return (
     <div
-      className="border bg-stone-900/40 rounded-lg py-6 px-8 hover:border-white/20 transition"
+      className="border bg-stone-900/40 rounded-lg py-6 px-8 hover:border-white/20 transition cursor-pointer"
       style={{ borderColor: "rgba(255, 255, 255, 0.1)" }}
+      onClick={handleBuyNow}
     >
       {/* Header with Name and Badge */}
       <div className="flex items-start justify-between mb-4">
@@ -109,14 +119,16 @@ export function ProductCard({
             </span>
           </div>
         </div>
-        {isMostPopular && (
-          <Badge
-            variant="outline"
-            className="bg-green-950/80 border-green-500/50 text-green-500 rounded-full text-xs font-medium px-3 py-1"
-          >
-            Popular Item
-          </Badge>
-        )}
+        <div className="flex flex-col gap-2 items-end">
+          {isMostPopular && (
+            <Badge
+              variant="outline"
+              className="bg-green-950/80 border-green-500/50 text-green-500 rounded-full text-xs font-medium px-3 py-1"
+            >
+              Popular Item
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Price */}
@@ -126,15 +138,22 @@ export function ProductCard({
 
       {/* Button */}
       <CustomButton
-        disabled={isOutOfStock}
+        disabled={isDisabled}
         variant="white"
         onClick={handleBuyNow}
         className="rounded-full"
+        title={
+          isDisabled
+            ? "This product is out of stock"
+            : isLoggedIn
+            ? "Click to purchase"
+            : "Login to purchase"
+        }
       >
-        {isOutOfStock ? "Out of Stock" : "Buy Now"}
+        {isDisabled ? "Out of Stock" : "Buy Now"}
       </CustomButton>
 
-      <div className=" w-full h-px bg-white/15 my-5"></div>
+      <div className="w-full h-px bg-white/15 my-5"></div>
 
       <div className="space-y-2">
         <p>Specifications :</p>

@@ -1,22 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';
+// app/api/auth/logout/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
     const response = NextResponse.json(
-      { message: 'Logout successful' },
+      { success: true, message: "Logout successful" },
       { status: 200 }
     );
 
-    response.cookies.set('auth-token', '', { maxAge: 0 });
-    response.cookies.set('user-role', '', { maxAge: 0 });
-    response.cookies.set('user-id', '', { maxAge: 0 });
-    response.cookies.set('user-phone', '', { maxAge: 0 }); // NEW
+    // Clear all auth cookies
+    response.cookies.set("auth-token", "", { maxAge: 0 });
+    response.cookies.set("user-id", "", { maxAge: 0 });
+    response.cookies.set("user-role", "", { maxAge: 0 });
+    response.cookies.set("user-username", "", { maxAge: 0 });
+    response.cookies.set("user-email", "", { maxAge: 0 });
+    response.cookies.set("user-phone", "", { maxAge: 0 });
 
     return response;
   } catch (error) {
+    console.error("Logout error:", error);
     return NextResponse.json(
-      { error: 'Logout failed' },
-      { status: 400 }
+      { success: false, error: "Logout failed" },
+      { status: 500 }
     );
   }
 }
@@ -24,20 +29,24 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const response = NextResponse.json(
-      { message: 'Logout successful' },
+      { success: true, message: "Logout successful" },
       { status: 200 }
     );
 
-    response.cookies.set('auth-token', '', { maxAge: 0 });
-    response.cookies.set('user-role', '', { maxAge: 0 });
-    response.cookies.set('user-id', '', { maxAge: 0 });
-    response.cookies.set('user-phone', '', { maxAge: 0 }); // NEW
+    // Clear all auth cookies
+    response.cookies.set("auth-token", "", { maxAge: 0 });
+    response.cookies.set("user-id", "", { maxAge: 0 });
+    response.cookies.set("user-role", "", { maxAge: 0 });
+    response.cookies.set("user-username", "", { maxAge: 0 });
+    response.cookies.set("user-email", "", { maxAge: 0 });
+    response.cookies.set("user-phone", "", { maxAge: 0 });
 
     return response;
   } catch (error) {
+    console.error("Logout error:", error);
     return NextResponse.json(
-      { error: 'Logout failed' },
-      { status: 400 }
+      { success: false, error: "Logout failed" },
+      { status: 500 }
     );
   }
 }

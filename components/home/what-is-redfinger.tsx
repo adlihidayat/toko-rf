@@ -5,15 +5,15 @@ import { Check } from "lucide-react";
 const features = [
   {
     title: "Cloud Gaming",
-    description: "Play mobile games 24/7 on cloud servers",
-  },
-  {
-    title: "Multi-Account",
-    description: "Manage multiple game accounts simultaneously",
+    description: "Play mobile games around the clock on cloud servers",
   },
   {
     title: "No Hardware Limit",
-    description: "Works on any device, even low-spec phones",
+    description: "Functions on all devices, including low-spec smartphones",
+  },
+  {
+    title: "Multi-Account",
+    description: "Handle several game accounts at the same time",
   },
 ];
 
@@ -25,16 +25,16 @@ const useCases = [
     color: "#b084cc",
   },
   {
-    icon: Users,
-    title: "Multi-Account",
-    description: "Manage accounts",
-    color: "#52a8ff",
-  },
-  {
     icon: Cpu,
     title: "Automation",
     description: "Bot scripts",
     color: "#52d652",
+  },
+  {
+    icon: Users,
+    title: "Multi-Account",
+    description: "Manage accounts",
+    color: "#52a8ff",
   },
   {
     icon: TestTube,
@@ -72,9 +72,10 @@ export function WhatIsRedfinger() {
           <div>
             {/* Description */}
             <p className="text-base text-secondary mb-8 leading-relaxed">
-              Redfinger is a cloud-based Android emulator that runs 24/7 in the
-              cloud. Perfect for mobile gaming, app testing, and automation
-              without draining your device battery or storage.
+              Redfinger is a cloud-centric Android emulator that operates
+              continuously in the cloud. Ideal for mobile gaming, app testing,
+              and automation without depleting your device's battery or storage
+              space
             </p>
 
             {/* Features List */}

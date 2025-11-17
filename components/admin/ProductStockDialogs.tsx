@@ -139,6 +139,7 @@ export function ProductDialog({
     >
   ) => {
     const { name, value } = e.target;
+
     setFormData((prev) => ({
       ...prev,
       [name]:
@@ -147,9 +148,26 @@ export function ProductDialog({
             ? null
             : value
           : ["price", "minimumPurchase", "reviews"].includes(name)
-          ? Number(value)
+          ? value === ""
+            ? ""
+            : parseNumberInput(value) // Parse the formatted input back to number
           : value,
     }));
+  };
+
+  const formatNumberDisplay = (value: number | string): string => {
+    if (value === "" || value === 0 || value === "0") return "";
+    const num = typeof value === "string" ? parseInt(value, 10) : value;
+    if (isNaN(num)) return "";
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const parseNumberInput = (displayValue: string): number => {
+    if (displayValue === "") return 0;
+    // Remove dots used as thousand separators and convert to number
+    const cleanValue = displayValue.replace(/\./g, "");
+    const num = parseInt(cleanValue, 10);
+    return isNaN(num) ? 0 : num;
   };
 
   const handleSubmit = async () => {
@@ -191,7 +209,7 @@ export function ProductDialog({
                 Category
               </Label>
               <Select
-                value={formData.categoryId}
+                value={formData.categoryId || ""}
                 onValueChange={(value) =>
                   setFormData({ ...formData, categoryId: value })
                 }
@@ -203,10 +221,11 @@ export function ProductDialog({
                   {categories.map((category) => (
                     <SelectItem
                       key={category._id}
-                      value={category._id}
-                      className="text-primary"
+                      value={category._id || ""}
+                      className="text-primary focus:bg-stone-700 focus:text-primary"
                     >
-                      {category.icon} {category.name}
+                      <img src={category.icon} alt="" className="w-5 h-5 " />{" "}
+                      {category.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -220,10 +239,11 @@ export function ProductDialog({
                 Price (Rp)
               </Label>
               <Input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 name="price"
                 placeholder="0"
-                value={formData.price}
+                value={formatNumberDisplay(formData.price)}
                 onChange={handleChange}
                 className="bg-stone-900/50 border-stone-800 text-primary h-10"
               />
@@ -233,10 +253,11 @@ export function ProductDialog({
                 Minimum Purchase
               </Label>
               <Input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 name="minimumPurchase"
                 placeholder="1"
-                value={formData.minimumPurchase}
+                value={formatNumberDisplay(formData.minimumPurchase)}
                 onChange={handleChange}
                 className="bg-stone-900/50 border-stone-800 text-primary h-10"
               />
@@ -381,10 +402,11 @@ export function ProductDialog({
                   Reviews Count
                 </Label>
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   name="reviews"
                   placeholder="0"
-                  value={formData.reviews}
+                  value={formatNumberDisplay(formData.reviews)}
                   onChange={handleChange}
                   className="bg-stone-900/50 border-stone-800 text-primary h-10"
                 />
@@ -476,7 +498,7 @@ export function StockDialog({
               Product
             </Label>
             <Select
-              value={formData.productId}
+              value={formData.productId || ""}
               onValueChange={(value) =>
                 setFormData({ ...formData, productId: value })
               }
@@ -488,7 +510,7 @@ export function StockDialog({
                 {products.map((product) => (
                   <SelectItem
                     key={product._id}
-                    value={product._id}
+                    value={product._id || ""}
                     className="text-primary"
                   >
                     {product.name}
@@ -774,7 +796,7 @@ export function DeleteDialog({
           <AlertDialogAction
             onClick={handleConfirm}
             disabled={isLoading}
-            className="bg-red-500 hover:bg-red-600"
+            className="bg-red-500 text-primary hover:bg-red-600"
           >
             {isLoading ? "Deleting..." : "Delete"}
           </AlertDialogAction>

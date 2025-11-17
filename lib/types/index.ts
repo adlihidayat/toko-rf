@@ -1,13 +1,16 @@
+// lib/types/index.ts
+
+// ============ USER TYPES ============
 export interface UserDocument {
-  _id: string;
+  _id?: string;
   username: string;
   email: string;
   phoneNumber: string;
   password: string;
   role: "admin" | "user";
-  joinDate: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  joinDate?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface UserProfile {
@@ -16,15 +19,22 @@ export interface UserProfile {
   email: string;
   phoneNumber: string;
   role: "admin" | "user";
-  joinDate: Date;
+  joinDate?: Date;
 }
 
+export interface UserStatsDocument {
+  totalPurchases: number;
+  totalSpent: number;
+  averageRating: number;
+}
+
+// ============ CATEGORY TYPES ============
 export interface CategoryDocument {
-  _id: string;
+  _id?: string;
   name: string;
   icon: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface CreateCategoryInput {
@@ -35,11 +45,12 @@ export interface CreateCategoryInput {
 export interface UpdateCategoryInput extends Partial<CreateCategoryInput> { }
 
 export interface CategoryWithStockCount extends CategoryDocument {
-  stockCount: number;
+  stockCount?: number;
 }
 
+// ============ PRODUCT TYPES ============
 export interface ProductDocument {
-  _id: string;
+  _id?: string;
   name: string;
   price: number;
   minimumPurchase: number;
@@ -52,9 +63,9 @@ export interface ProductDocument {
   bit: string;
   processor: string;
   reviews: number;
-  badge: "new" | "best-deal" | "popular" | null;
-  createdAt: Date;
-  updatedAt: Date;
+  badge?: "new" | "best-deal" | "popular" | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface CreateProductInput {
@@ -70,44 +81,51 @@ export interface CreateProductInput {
   bit: string;
   processor: string;
   reviews: number;
-  badge: "new" | "best-deal" | "popular" | null;
+  badge?: "new" | "best-deal" | "popular" | null;
 }
 
 export interface UpdateProductInput extends Partial<CreateProductInput> { }
 
+// ============ STOCK TYPES ============
 export interface StockDocument {
-  _id: string;
+  _id?: string;
   productId: string;
   redeemCode: string;
-  addedDate: Date;
-  purchaseId?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  addedDate?: Date;
+  purchaseId?: string | null;
+  status: "available" | "pending" | "paid";
+  reservedAt?: Date | null;
+  paidAt?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface CreateStockInput {
   productId: string;
   redeemCode: string;
+  status?: "available" | "pending" | "paid";
+  purchaseId?: string | null;
+  reservedAt?: Date | null;
+  paidAt?: Date | null;
 }
 
 export interface StockWithProductInfo extends StockDocument {
   productName: string;
   productPrice: number;
-  isAvailable: boolean;
 }
 
-// MAIN PURCHASE DOCUMENT - CONSOLIDATED
+// ============ PURCHASE TYPES ============
 export interface PurchaseDocument {
-  _id: string;
+  _id?: string;
   userId: string;
   productId: string;
   stockId: string;
-  quantity: number; // NEW - for bulk purchases
+  quantity: number;
   totalPaid: number;
-  paymentStatus: "pending" | "completed" | "failed"; // NEW - tracks payment
-  rating: number | null; // 1-5 or null if not rated
-  createdAt: Date;
-  updatedAt: Date;
+  paymentStatus: "pending" | "completed" | "cancelled";
+  rating?: number | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface PurchaseWithDetails extends PurchaseDocument {

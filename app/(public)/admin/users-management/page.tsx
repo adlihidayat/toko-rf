@@ -27,15 +27,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp, Eye, Edit2, Trash2, Ellipsis, Phone } from "lucide-react";
-import { UserService } from "@/lib/db/users";
-import { PurchaseService } from "@/lib/db/purchases";
+import { TrendingUp, Eye, Edit2, Trash2, Ellipsis, X } from "lucide-react";
 import { UserDocument, PurchaseWithDetails } from "@/lib/types";
 import {
   UserEditDialog,
   UserDetailDialog,
   DeleteDialog,
 } from "@/components/admin/UserDialogs";
+import { toDate } from "@/lib/utils/date";
 
 export default function UserManagementPage() {
   const [users, setUsers] = useState<UserDocument[]>([]);
@@ -45,25 +44,44 @@ export default function UserManagementPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
+  // Error/Success states
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   // Dialog states
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserDocument | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [allUsers, allPurchases] = await Promise.all([
-          UserService.getAllUsers(),
-          PurchaseService.getAllPurchases(),
+        setError(null);
+        const [usersRes, purchasesRes] = await Promise.all([
+          fetch("/api/users", {
+            credentials: "include",
+          }),
+          fetch("/api/purchase", {
+            credentials: "include",
+          }),
         ]);
-        setUsers(allUsers);
-        setPurchases(allPurchases);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
+
+        if (!usersRes.ok || !purchasesRes.ok) {
+          throw new Error("Failed to fetch data");
+        }
+
+        const usersData = await usersRes.json();
+        const purchasesData = await purchasesRes.json();
+
+        if (usersData.success) setUsers(usersData.data);
+        if (purchasesData.success) setPurchases(purchasesData.data);
+      } catch (err) {
+        console.error("Failed to fetch data:", err);
+        setError("Failed to load user data");
       } finally {
         setLoading(false);
       }
@@ -112,33 +130,82 @@ export default function UserManagementPage() {
     setIsDeleteOpen(true);
   };
 
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  const showError = (message: string) => {
+    setError(message);
+    setTimeout(() => setError(null), 5000);
+  };
+
   const onEditSubmit = async (role: "admin" | "user") => {
     try {
-      if (selectedUser) {
-        const updated = await UserService.updateUserRole(
-          selectedUser._id,
-          role
-        );
-        if (updated) {
-          setUsers(users.map((u) => (u._id === updated._id ? updated : u)));
-        }
+      setIsSubmitting(true);
+      setError(null);
+
+      if (!selectedUser) {
+        showError("No user selected");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to update user:", error);
+
+      const response = await fetch(`/api/users/${selectedUser._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ role }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        showError(data.error || "Failed to update user");
+        return;
+      }
+
+      setUsers(users.map((u) => (u._id === data.data._id ? data.data : u)));
+      setIsEditOpen(false);
+      showSuccess(`User role updated to ${role}`);
+    } catch (err) {
+      console.error("Failed to update user:", err);
+      showError("Failed to update user. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const onDeleteConfirm = async () => {
     try {
-      if (selectedUser) {
-        const deleted = await UserService.deleteUser(selectedUser._id);
-        if (deleted) {
-          setUsers(users.filter((u) => u._id !== selectedUser._id));
-          setPurchases(purchases.filter((p) => p.userId !== selectedUser._id));
-        }
+      setIsSubmitting(true);
+      setError(null);
+
+      if (!selectedUser) {
+        showError("No user selected");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to delete user:", error);
+
+      const response = await fetch(`/api/users/${selectedUser._id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        showError(data.error || "Failed to delete user");
+        return;
+      }
+
+      setUsers(users.filter((u) => u._id !== selectedUser._id));
+      setPurchases(purchases.filter((p) => p.userId !== selectedUser._id));
+      setIsDeleteOpen(false);
+      showSuccess("User deleted successfully");
+    } catch (err) {
+      console.error("Failed to delete user:", err);
+      showError("Failed to delete user. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -215,6 +282,32 @@ export default function UserManagementPage() {
         </div>
       </div>
 
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed bottom-4 right-4 bg-red-500/20 border border-red-500/30 rounded-lg p-4 max-w-sm z-50 flex items-start justify-between gap-4">
+          <p className="text-sm text-red-400">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-400 hover:text-red-300"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {successMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-500/20 border border-green-500/30 rounded-lg p-4 max-w-sm z-50 flex items-start justify-between gap-4">
+          <p className="text-sm text-green-400">{successMessage}</p>
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="text-green-400 hover:text-green-300"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Search Bar */}
       <div className="flex flex-col md:flex-row justify-between gap-4 mb-8">
         <div className="flex-1 max-w-md">
@@ -287,7 +380,7 @@ export default function UserManagementPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-secondary">
-                      {user.joinDate.toLocaleDateString("id-ID")}
+                      {toDate(user.joinDate).toLocaleDateString("id-ID")}
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -387,6 +480,7 @@ export default function UserManagementPage() {
         onOpenChange={setIsEditOpen}
         onSubmit={onEditSubmit}
         user={selectedUser}
+        isLoading={isSubmitting}
       />
 
       <UserDetailDialog
@@ -410,6 +504,7 @@ export default function UserManagementPage() {
             ? `Are you sure you want to delete user "${selectedUser.username}"? All associated data will be removed. This action cannot be undone.`
             : ""
         }
+        isLoading={isSubmitting}
       />
     </div>
   );

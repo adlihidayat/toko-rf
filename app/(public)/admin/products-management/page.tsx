@@ -35,12 +35,7 @@ import {
   Star,
   Box,
   Ellipsis,
-  Tag,
 } from "lucide-react";
-import { ProductService } from "@/lib/db/products";
-import { StockService } from "@/lib/db/stocks";
-import { PurchaseService } from "@/lib/db/purchases";
-import { CategoryService } from "@/lib/db/categories";
 import {
   CreateProductInput,
   CreateStockInput,
@@ -56,6 +51,7 @@ import {
   DeleteDialog,
   CategoryDialog,
 } from "@/components/admin/ProductStockDialogs";
+import { toDate } from "@/lib/utils/date";
 
 type ViewMode = "products" | "stocks" | "purchases" | "categories";
 
@@ -94,28 +90,48 @@ export default function ProductManagementPage() {
 
   // Fetch data
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [allProducts, allStocks, allPurchases, allCategories] =
-          await Promise.all([
-            ProductService.getAllProducts(),
-            StockService.getAllStocksWithProductInfo(),
-            PurchaseService.getAllPurchases(),
-            CategoryService.getAllCategoriesWithStockCount(),
-          ]);
-        setProducts(allProducts);
-        setStocks(allStocks);
-        setPurchases(allPurchases);
-        setCategories(allCategories);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    fetchAllData();
   }, []);
+
+  const fetchAllData = async () => {
+    try {
+      setLoading(true);
+      const [productsRes, stocksRes, purchasesRes, categoriesRes] =
+        await Promise.all([
+          fetch("/api/products"),
+          fetch("/api/stocks"),
+          fetch("/api/purchase"),
+          fetch("/api/categories"),
+        ]);
+
+      const productsData = await productsRes.json();
+      const stocksData = await stocksRes.json();
+      const purchasesData = await purchasesRes.json();
+      const categoriesData = await categoriesRes.json();
+
+      console.log("📦 Products:", productsData);
+      console.log("📊 Stocks:", stocksData);
+      console.log("🛒 Purchases:", purchasesData);
+      console.log("📁 Categories:", categoriesData);
+
+      if (productsData.success) setProducts(productsData.data);
+      if (stocksData.success) setStocks(stocksData.data);
+
+      // Filter purchases to show only completed ones
+      if (purchasesData.success) {
+        const completedPurchases = purchasesData.data.filter(
+          (p: PurchaseWithDetails) => p.paymentStatus === "completed"
+        );
+        setPurchases(completedPurchases);
+      }
+
+      if (categoriesData.success) setCategories(categoriesData.data);
+    } catch (error) {
+      console.error("❌ Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filter data
   const filteredData =
@@ -167,145 +183,289 @@ export default function ProductManagementPage() {
         ).toFixed(1)
       : "0";
 
+  // Product handlers
   const handleAddProduct = () => {
+    console.log("🔵 Opening add product dialog");
     setProductDialogMode("add");
     setSelectedProduct(null);
     setIsProductDialogOpen(true);
   };
 
   const handleEditProduct = (product: ProductDocument) => {
+    console.log("🔵 Opening edit product dialog for:", product.name);
     setProductDialogMode("edit");
     setSelectedProduct(product);
     setIsProductDialogOpen(true);
   };
 
   const handleDeleteProduct = (product: ProductDocument) => {
+    console.log("🔴 Opening delete dialog for product:", product.name);
     setSelectedProduct(product);
     setDeleteTarget("product");
     setIsDeleteOpen(true);
   };
 
-  const handleDeleteStock = (stock: StockWithProductInfo) => {
-    setSelectedStock(stock);
-    setDeleteTarget("stock");
-    setIsDeleteOpen(true);
+  const onProductSubmit = async (data: CreateProductInput) => {
+    try {
+      console.log("💾 Submitting product data:", data);
+
+      if (productDialogMode === "edit" && selectedProduct) {
+        console.log("📝 Updating product:", selectedProduct._id);
+        const response = await fetch(`/api/products/${selectedProduct._id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (response.ok) {
+          const { data: updated } = await response.json();
+          console.log("✅ Product updated successfully:", updated);
+          await fetchAllData(); // Refresh all data
+          setIsProductDialogOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to update product:", error);
+          alert(`Failed to update product: ${error.error || "Unknown error"}`);
+        }
+      } else {
+        console.log("➕ Creating new product");
+        const response = await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (response.ok) {
+          const { data: newProduct } = await response.json();
+          console.log("✅ Product created successfully:", newProduct);
+          await fetchAllData(); // Refresh all data
+          setIsProductDialogOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to create product:", error);
+          alert(`Failed to create product: ${error.error || "Unknown error"}`);
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error saving product:", error);
+      alert("An error occurred while saving the product");
+    }
+  };
+
+  // Stock handlers
+  const handleAddStock = () => {
+    console.log("🔵 Opening add stock dialog");
+    setStockDialogMode("add");
+    setSelectedStock(null);
+    setIsStockDialogOpen(true);
   };
 
   const handleEditStock = (stock: StockWithProductInfo) => {
+    console.log("🔵 Opening edit stock dialog for:", stock.redeemCode);
     setStockDialogMode("edit");
     setSelectedStock(stock);
     setIsStockDialogOpen(true);
   };
 
-  const handleAddCategory = () => {
-    setCategoryDialogMode("add");
-    setSelectedCategory(null);
-    setIsCategoryDialogOpen(true);
-  };
-
-  const handleEditCategory = (category: CategoryWithStockCount) => {
-    setCategoryDialogMode("edit");
-    setSelectedCategory(category);
-    setIsCategoryDialogOpen(true);
-  };
-
-  const handleDeleteCategory = (category: CategoryWithStockCount) => {
-    setSelectedCategory(category);
-    setDeleteTarget("category");
+  const handleDeleteStock = (stock: StockWithProductInfo) => {
+    console.log("🔴 Opening delete dialog for stock:", stock.redeemCode);
+    setSelectedStock(stock);
+    setDeleteTarget("stock");
     setIsDeleteOpen(true);
-  };
-
-  const onProductSubmit = async (data: CreateProductInput) => {
-    try {
-      if (productDialogMode === "edit" && selectedProduct) {
-        const updated = await ProductService.updateProduct(
-          selectedProduct._id,
-          data
-        );
-        if (updated) {
-          setProducts(
-            products.map((p) => (p._id === updated._id ? updated : p))
-          );
-        }
-      } else {
-        const newProduct = await ProductService.createProduct(data);
-        setProducts([...products, newProduct]);
-      }
-    } catch (error) {
-      console.error("Failed to save product:", error);
-    }
   };
 
   const onStockSubmit = async (
     data: CreateStockInput | { productId: string; redeemCode: string }
   ) => {
     try {
+      console.log("💾 Submitting stock data:", data);
+
       if (stockDialogMode === "edit" && selectedStock) {
-        await StockService.updateStock(selectedStock._id, {
-          productId: data.productId,
-          redeemCode: data.redeemCode,
+        console.log("📝 Updating stock:", selectedStock._id);
+        const response = await fetch(`/api/stocks/${selectedStock._id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
         });
-        const allStocks = await StockService.getAllStocksWithProductInfo();
-        setStocks(allStocks);
+
+        if (response.ok) {
+          console.log("✅ Stock updated successfully");
+          await fetchAllData();
+          setIsStockDialogOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to update stock:", error);
+          alert(`Failed to update stock: ${error.error || "Unknown error"}`);
+        }
       } else {
+        console.log("➕ Creating new stock(s)");
         const codes = data.redeemCode
           .split("\n")
           .map((code) => code.trim())
           .filter((code) => code.length > 0);
 
+        console.log(`📦 Creating ${codes.length} stock items`);
+
         for (const code of codes) {
-          await StockService.createStock({
-            productId: data.productId,
-            redeemCode: code,
+          const response = await fetch("/api/stocks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              productId: data.productId,
+              redeemCode: code,
+            }),
           });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error("❌ Failed to create stock:", error);
+            alert(
+              `Failed to create stock "${code}": ${
+                error.error || "Unknown error"
+              }`
+            );
+            break;
+          }
         }
-        const allStocks = await StockService.getAllStocksWithProductInfo();
-        setStocks(allStocks);
+
+        console.log("✅ All stocks created successfully");
+        await fetchAllData();
+        setIsStockDialogOpen(false);
       }
     } catch (error) {
-      console.error("Failed to add/edit stock:", error);
+      console.error("❌ Error saving stock:", error);
+      alert("An error occurred while saving the stock");
     }
+  };
+
+  // Category handlers
+  const handleAddCategory = () => {
+    console.log("🔵 Opening add category dialog");
+    setCategoryDialogMode("add");
+    setSelectedCategory(null);
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleEditCategory = (category: CategoryWithStockCount) => {
+    console.log("🔵 Opening edit category dialog for:", category.name);
+    setCategoryDialogMode("edit");
+    setSelectedCategory(category);
+    setIsCategoryDialogOpen(true);
+  };
+
+  const handleDeleteCategory = (category: CategoryWithStockCount) => {
+    console.log("🔴 Opening delete dialog for category:", category.name);
+    setSelectedCategory(category);
+    setDeleteTarget("category");
+    setIsDeleteOpen(true);
   };
 
   const onCategorySubmit = async (data: CreateCategoryInput) => {
     try {
+      console.log("💾 Submitting category data:", data);
+
       if (categoryDialogMode === "edit" && selectedCategory) {
-        const updated = await CategoryService.updateCategory(
-          selectedCategory._id,
-          data
+        console.log("📝 Updating category:", selectedCategory._id);
+        const response = await fetch(
+          `/api/categories/${selectedCategory._id}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }
         );
-        if (updated) {
-          const allCategories =
-            await CategoryService.getAllCategoriesWithStockCount();
-          setCategories(allCategories);
+
+        if (response.ok) {
+          console.log("✅ Category updated successfully");
+          await fetchAllData();
+          setIsCategoryDialogOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to update category:", error);
+          alert(`Failed to update category: ${error.error || "Unknown error"}`);
         }
       } else {
-        await CategoryService.createCategory(data);
-        const allCategories =
-          await CategoryService.getAllCategoriesWithStockCount();
-        setCategories(allCategories);
+        console.log("➕ Creating new category");
+        const response = await fetch("/api/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (response.ok) {
+          const { data: newCategory } = await response.json();
+          console.log("✅ Category created successfully:", newCategory);
+          await fetchAllData();
+          setIsCategoryDialogOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to create category:", error);
+          alert(`Failed to create category: ${error.error || "Unknown error"}`);
+        }
       }
     } catch (error) {
-      console.error("Failed to save category:", error);
+      console.error("❌ Error saving category:", error);
+      alert("An error occurred while saving the category");
     }
   };
 
+  // Delete handler
   const onDeleteConfirm = async () => {
     try {
+      console.log("🗑️ Deleting", deleteTarget);
+
       if (deleteTarget === "product" && selectedProduct) {
-        await ProductService.deleteProduct(selectedProduct._id);
-        setProducts(products.filter((p) => p._id !== selectedProduct._id));
+        console.log("Deleting product:", selectedProduct._id);
+        const response = await fetch(`/api/products/${selectedProduct._id}`, {
+          method: "DELETE",
+        });
+
+        if (response.ok) {
+          console.log("✅ Product deleted successfully");
+          await fetchAllData();
+          setIsDeleteOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to delete product:", error);
+          alert(`Failed to delete product: ${error.error || "Unknown error"}`);
+        }
       } else if (deleteTarget === "stock" && selectedStock) {
-        await StockService.deleteStock(selectedStock._id);
-        setStocks(stocks.filter((s) => s._id !== selectedStock._id));
+        console.log("Deleting stock:", selectedStock._id);
+        const response = await fetch(`/api/stocks/${selectedStock._id}`, {
+          method: "DELETE",
+        });
+
+        if (response.ok) {
+          console.log("✅ Stock deleted successfully");
+          await fetchAllData();
+          setIsDeleteOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to delete stock:", error);
+          alert(`Failed to delete stock: ${error.error || "Unknown error"}`);
+        }
       } else if (deleteTarget === "category" && selectedCategory) {
-        await CategoryService.deleteCategory(selectedCategory._id);
-        const allCategories =
-          await CategoryService.getAllCategoriesWithStockCount();
-        setCategories(allCategories);
+        console.log("Deleting category:", selectedCategory._id);
+        const response = await fetch(
+          `/api/categories/${selectedCategory._id}`,
+          {
+            method: "DELETE",
+          }
+        );
+
+        if (response.ok) {
+          console.log("✅ Category deleted successfully");
+          await fetchAllData();
+          setIsDeleteOpen(false);
+        } else {
+          const error = await response.json();
+          console.error("❌ Failed to delete category:", error);
+          alert(`Failed to delete category: ${error.error || "Unknown error"}`);
+        }
       }
     } catch (error) {
-      console.error("Failed to delete:", error);
+      console.error("❌ Error deleting:", error);
+      alert("An error occurred while deleting");
     }
   };
 
@@ -457,11 +617,7 @@ export default function ProductManagementPage() {
               viewMode === "products"
                 ? handleAddProduct
                 : viewMode === "stocks"
-                ? () => {
-                    setStockDialogMode("add");
-                    setSelectedStock(null);
-                    setIsStockDialogOpen(true);
-                  }
+                ? handleAddStock
                 : viewMode === "categories"
                 ? handleAddCategory
                 : undefined
@@ -477,7 +633,7 @@ export default function ProductManagementPage() {
         )}
       </div>
 
-      {/* Table */}
+      {/* Table - Rest of your table code stays the same */}
       <div className="bg-background border border-white/10 rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-secondary">Loading...</div>
@@ -487,11 +643,12 @@ export default function ProductManagementPage() {
           </div>
         ) : (
           <Table>
+            {/* Your existing table code - keeping it as is for brevity */}
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 {viewMode === "products" ? (
                   <>
-                    <TableHead className="text-primary">Title</TableHead>
+                    <TableHead className="text-primary w-96">Title</TableHead>
                     <TableHead className="text-primary">Price</TableHead>
                     <TableHead className="text-primary">Stock Count</TableHead>
                     <TableHead className="text-primary">Min Purchase</TableHead>
@@ -500,7 +657,7 @@ export default function ProductManagementPage() {
                   </>
                 ) : viewMode === "stocks" ? (
                   <>
-                    <TableHead className="text-primary">Product</TableHead>
+                    <TableHead className="text-primary w-96">Product</TableHead>
                     <TableHead className="text-primary">Redeem Code</TableHead>
                     <TableHead className="text-primary">Added Date</TableHead>
                     <TableHead className="text-primary">Status</TableHead>
@@ -508,9 +665,13 @@ export default function ProductManagementPage() {
                   </>
                 ) : viewMode === "purchases" ? (
                   <>
-                    <TableHead className="text-primary">Product</TableHead>
-                    <TableHead className="text-primary">Customer</TableHead>
-                    <TableHead className="text-primary">Redeem Code</TableHead>
+                    <TableHead className="text-primary w-60">Product</TableHead>
+                    <TableHead className="text-primary w-60">
+                      Customer
+                    </TableHead>
+                    <TableHead className="text-primary w-60">
+                      Redeem Code
+                    </TableHead>
                     <TableHead className="text-primary">Amount</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
                     <TableHead className="text-primary">Date</TableHead>
@@ -528,6 +689,7 @@ export default function ProductManagementPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* Your existing table body rendering logic */}
               {viewMode === "products"
                 ? (paginatedData as ProductDocument[]).map((product) => {
                     const stockCount = stocks.filter(
@@ -620,14 +782,14 @@ export default function ProductManagementPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => handleEditProduct(product)}
-                                className="focus:bg-stone-800 focus:text-primary"
+                                className="focus:bg-stone-800 focus:text-primary cursor-pointer"
                               >
                                 <Edit2 className="w-4 h-4 mr-2" />
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDeleteProduct(product)}
-                                className="text-red-400 focus:bg-stone-800 focus:text-red-400"
+                                className="text-red-400 focus:bg-stone-800 focus:text-red-400 cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
@@ -651,17 +813,19 @@ export default function ProductManagementPage() {
                         {stock.redeemCode}
                       </TableCell>
                       <TableCell className="text-secondary">
-                        {stock.addedDate.toLocaleDateString("id-ID")}
+                        {toDate(stock.addedDate).toLocaleDateString("id-ID")}
                       </TableCell>
                       <TableCell>
                         <Badge
                           className={
-                            stock.isAvailable
+                            stock.status === "available"
                               ? "bg-green-500/20 text-green-300 border-green-500/30"
                               : "bg-gray-500/20 text-gray-300 border-gray-500/30"
                           }
                         >
-                          {stock.isAvailable ? "Available" : "Purchased"}
+                          {stock.status === "available"
+                            ? "Available"
+                            : "Purchased"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -678,14 +842,14 @@ export default function ProductManagementPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               onClick={() => handleEditStock(stock)}
-                              className="focus:bg-stone-800 focus:text-primary"
+                              className="focus:bg-stone-800 focus:text-primary cursor-pointer"
                             >
                               <Edit2 className="w-4 h-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleDeleteStock(stock)}
-                              className="text-red-400 focus:bg-stone-800 focus:text-red-400"
+                              className="text-red-400 focus:bg-stone-800 focus:text-red-400 cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
                               Delete
@@ -716,7 +880,7 @@ export default function ProductManagementPage() {
                       <TableCell>
                         {purchase.rating !== null ? (
                           <div className="flex items-center gap-x-1.5">
-                            <Star className="w-3 text-yellow-400 fill-yellow-400" />
+                            <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
                             <span className="text-primary">
                               {purchase.rating}
                             </span>
@@ -728,7 +892,7 @@ export default function ProductManagementPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-secondary">
-                        {purchase.createdAt.toLocaleDateString("id-ID")}
+                        {toDate(purchase.createdAt).toLocaleDateString("id-ID")}
                       </TableCell>
                     </TableRow>
                   ))
@@ -771,14 +935,14 @@ export default function ProductManagementPage() {
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => handleEditCategory(category)}
-                                className="focus:bg-stone-800 focus:text-primary"
+                                className="focus:bg-stone-800 focus:text-primary cursor-pointer"
                               >
                                 <Edit2 className="w-4 h-4 mr-2" />
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDeleteCategory(category)}
-                                className="text-red-400 focus:bg-stone-800 focus:text-red-400"
+                                className="text-red-400 focus:bg-stone-800 focus:text-red-400 cursor-pointer"
                               >
                                 <Trash2 className="w-4 h-4 mr-2" />
                                 Delete
@@ -852,12 +1016,7 @@ export default function ProductManagementPage() {
       <StockDialog
         open={isStockDialogOpen}
         mode={stockDialogMode}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsStockDialogOpen(false);
-            setSelectedStock(null);
-          }
-        }}
+        onOpenChange={setIsStockDialogOpen}
         onSubmit={onStockSubmit}
         products={products}
         initialData={selectedStock}

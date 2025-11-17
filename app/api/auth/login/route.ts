@@ -1,5 +1,6 @@
+// app/api/auth/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { UserService } from "@/lib/db/users";
+import { UserService } from "@/lib/db/services/users";
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,7 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: "Email and password required" },
+        { success: false, error: "Email and password required" },
         { status: 400 }
       );
     }
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid email or password" },
+        { success: false, error: "Invalid email or password" },
         { status: 401 }
       );
     }
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
           id: user._id,
           username: user.username,
           email: user.email,
-          phoneNumber: user.phoneNumber, // NEW
+          phoneNumber: user.phoneNumber,
           role: user.role,
           joinDate: user.joinDate,
         },
@@ -37,21 +38,22 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
+    // Set auth cookies
     response.cookies.set("auth-token", user._id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
     });
 
-    response.cookies.set("user-role", user.role, {
+    response.cookies.set("user-id", user._id, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    response.cookies.set("user-id", user._id, {
+    response.cookies.set("user-role", user.role, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    response.cookies.set("user-phone", user.phoneNumber, { // NEW
+    response.cookies.set("user-phone", user.phoneNumber, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Login error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

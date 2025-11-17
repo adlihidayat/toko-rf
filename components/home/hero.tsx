@@ -58,7 +58,7 @@ export function HeroSection() {
           <CustomButton
             variant="white"
             className="px-8 h-12 max-w-40"
-            onClick={() => scrollToSection("choose-package")}
+            onClick={() => scrollToSection("choose-Product")}
           >
             Start Shopping
           </CustomButton>

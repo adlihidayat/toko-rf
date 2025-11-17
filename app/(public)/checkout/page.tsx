@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, ShoppingCart, Loader, AlertCircle } from "lucide-react";
-import { ProductService } from "@/lib/db/products";
-import { StockService } from "@/lib/db/stocks";
-import { PurchaseService } from "@/lib/db/purchases";
-import { PurchasePaymentService } from "@/lib/db/purchase-payment";
+import {
+  ArrowLeft,
+  ShoppingCart,
+  Loader,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react";
 import { ProductDocument } from "@/lib/types";
 
 function CheckoutContent() {
@@ -25,11 +27,20 @@ function CheckoutContent() {
   const [processing, setProcessing] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [qrCode, setQrCode] = useState<string>("");
-  const [purchaseId, setPurchaseId] = useState<string>("");
+  const [purchaseIds, setPurchaseIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Mock userId - replace with actual auth context
-  const userId = "user_002";
+  // Extract userId from cookies
+  useEffect(() => {
+    const cookies = document.cookie.split(";");
+    const userIdCookie = cookies
+      .find((cookie) => cookie.trim().startsWith("user-id="))
+      ?.split("=")[1];
+    setUserId(userIdCookie || null);
+    console.log("UserId from cookie:", userIdCookie);
+  }, []);
 
   // Fetch product on mount
   useEffect(() => {
@@ -42,16 +53,18 @@ function CheckoutContent() {
       try {
         setLoading(true);
         setError(null);
-        const products = await ProductService.getAllProducts();
-        const found = products.find((p) => p._id === productId);
 
-        if (found) {
-          setProduct(found);
-          setQuantity(found.minimumPurchase);
-        } else {
-          setError("Product not found");
+        const response = await fetch(`/api/products/${productId}`);
+        const { data, success, error: apiError } = await response.json();
+
+        if (!success || !data) {
+          setError(apiError || "Product not found");
           router.push("/products");
+          return;
         }
+
+        setProduct(data);
+        setQuantity(data.minimumPurchase);
       } catch (error) {
         console.error("Failed to fetch product:", error);
         setError("Failed to load product");
@@ -76,33 +89,45 @@ function CheckoutContent() {
   };
 
   const handlePayNow = async () => {
-    if (!product) return;
+    if (!product || !userId) {
+      setError("User ID not found. Please log in.");
+      return;
+    }
 
     try {
       setProcessing(true);
       setError(null);
 
-      // Get available stock
-      const stocks = await StockService.getAvailableStock(product._id);
-      if (stocks.length === 0) {
-        setError("Product is out of stock. Please try again later.");
+      // Create pending purchases and reserve stocks atomically
+      const response = await fetch("/api/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          productId: product._id,
+          quantity,
+          totalPaid: calculateTotal(),
+        }),
+      });
+
+      const { data, success, error: apiError } = await response.json();
+
+      if (!success) {
+        setError(apiError || "Payment processing failed");
         return;
       }
 
-      // Create pending purchase
-      const purchase = await PurchaseService.createPendingPurchase(
-        userId,
-        product._id,
-        stocks[0]._id,
-        quantity,
-        calculateTotal()
+      // Extract purchase IDs
+      const ids = data.purchases.map((p: any) => p._id);
+      setPurchaseIds(ids);
+
+      // Generate QR code with concatenated purchase IDs
+      const qrData = ids.join(",");
+      setQrCode(
+        `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+          qrData
+        )}`
       );
-
-      setPurchaseId(purchase._id);
-
-      // Generate QR code
-      const qr = await PurchasePaymentService.generateQRCode(purchase._id);
-      setQrCode(qr);
       setShowQR(true);
     } catch (error) {
       console.error("Failed to process payment:", error);
@@ -114,15 +139,46 @@ function CheckoutContent() {
 
   const handleCompletePayment = async () => {
     try {
-      // Update purchase status to completed
-      if (purchaseId) {
-        await PurchasePaymentService.completePayment(purchaseId);
+      setProcessing(true);
+      setError(null);
+
+      if (purchaseIds.length === 0) {
+        setError("Purchase IDs not found");
+        return;
       }
-      // Redirect to home
-      router.push("/");
+
+      // Update all purchase statuses to completed
+      const updatePromises = purchaseIds.map((purchaseId) =>
+        fetch(`/api/purchase/${purchaseId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentStatus: "completed" }),
+        })
+      );
+
+      const responses = await Promise.all(updatePromises);
+      const results = await Promise.all(responses.map((r) => r.json()));
+
+      // Check if all updates succeeded
+      const allSuccessful = results.every((r) => r.success);
+
+      if (!allSuccessful) {
+        setError("Failed to complete some payments");
+        return;
+      }
+
+      // Show success message
+      setSuccess(true);
+
+      // Redirect to home after 2 seconds
+      setTimeout(() => {
+        router.push("/");
+      }, 2000);
     } catch (error) {
       console.error("Failed to complete payment:", error);
       setError("Failed to complete payment. Please try again.");
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -161,20 +217,38 @@ function CheckoutContent() {
       <section className="pb-20 px-8 pt-10">
         <div className="max-w-4xl mx-auto">
           {/* Back Button */}
-          <Button
-            onClick={() => router.back()}
-            variant="outline"
-            className="mb-8 border-white/10 hover:bg-stone-800 hover:text-primary cursor-pointer flex items-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Button>
+          {!success && (
+            <Button
+              onClick={() => router.back()}
+              variant="outline"
+              className="mb-8 border-white/10 hover:bg-stone-800 hover:text-primary cursor-pointer flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </Button>
+          )}
 
           {/* Error Alert */}
           {error && (
             <div className="mb-8 p-4 bg-red-900/20 border border-red-500/30 rounded-lg flex gap-3">
               <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
               <p className="text-red-300">{error}</p>
+            </div>
+          )}
+
+          {/* Success Alert */}
+          {success && (
+            <div className="mb-8 p-4 bg-green-900/20 border border-green-500/30 rounded-lg flex gap-3">
+              <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-green-300 font-medium">
+                  Payment Successful!
+                </p>
+                <p className="text-green-300/80 text-sm">
+                  {purchaseIds.length} item{purchaseIds.length !== 1 ? "s" : ""}{" "}
+                  added to your history. Redirecting...
+                </p>
+              </div>
             </div>
           )}
 
@@ -253,6 +327,7 @@ function CheckoutContent() {
                         }
                         className="bg-stone-800/30 border-white/10 text-center w-20 h-10"
                         min={product.minimumPurchase}
+                        disabled={showQR || success}
                       />
                     </div>
                   </div>
@@ -333,8 +408,8 @@ function CheckoutContent() {
                   {!showQR ? (
                     <Button
                       onClick={handlePayNow}
-                      disabled={processing}
-                      className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg"
+                      disabled={processing || success}
+                      className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg disabled:opacity-50"
                     >
                       {processing ? (
                         <>
@@ -359,9 +434,17 @@ function CheckoutContent() {
                       </p>
                       <Button
                         onClick={handleCompletePayment}
-                        className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg"
+                        disabled={processing}
+                        className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg disabled:opacity-50"
                       >
-                        Complete & Go Home
+                        {processing ? (
+                          <>
+                            <Loader className="w-4 h-4 mr-2 animate-spin" />
+                            Completing...
+                          </>
+                        ) : (
+                          "Complete & Go Home"
+                        )}
                       </Button>
                     </div>
                   )}

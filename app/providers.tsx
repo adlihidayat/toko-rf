@@ -26,7 +26,17 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fetchUserRole = async () => {
       try {
-        const response = await fetch("/api/auth/me");
+        const response = await fetch("/api/auth/me", {
+          credentials: "include", // IMPORTANT: Include cookies in request
+        });
+
+        // 401 is expected for non-logged-in users
+        if (response.status === 401) {
+          setRole(null);
+          setIsLoading(false);
+          return;
+        }
+
         if (response.ok) {
           const data = await response.json();
           setRole(data.role === "admin" ? "admin" : "user");
@@ -34,7 +44,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
           setRole(null);
         }
       } catch (error) {
-        console.error("Failed to fetch user role:", error);
+        // Silently fail - this is expected when user is not logged in
         setRole(null);
       } finally {
         setIsLoading(false);

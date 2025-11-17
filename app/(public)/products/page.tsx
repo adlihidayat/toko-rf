@@ -7,20 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft } from "lucide-react";
-import { ProductService } from "@/lib/db/products";
-import { CategoryService } from "@/lib/db/categories";
 import { ProductDocument, CategoryWithStockCount } from "@/lib/types";
+
+interface ProductWithStock extends ProductDocument {
+  availableStockCount: number;
+}
 
 export default function ProductsPage() {
   const [categories, setCategories] = useState<CategoryWithStockCount[]>([]);
-  const [products, setProducts] = useState<ProductDocument[]>([]);
+  const [products, setProducts] = useState<ProductWithStock[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-
-  // FIX: Check if user is actually logged in from cookies
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // Category selection state
   const [selectedCategory, setSelectedCategory] =
     useState<CategoryWithStockCount | null>(null);
 
@@ -29,9 +27,8 @@ export default function ProductsPage() {
     return products.filter((p) => p.categoryId === categoryId).length;
   };
 
-  // FIX: Check auth status on mount
+  // Check auth status on mount
   useEffect(() => {
-    // Check if auth cookies exist (check for user-id instead of auth-token)
     const checkAuth = () => {
       const cookies = document.cookie.split(";");
       const userId = cookies.find((cookie) =>
@@ -43,9 +40,8 @@ export default function ProductsPage() {
       const hasAuth = !!(userId && userRole);
 
       console.log("🔍 Auth Check:");
-      console.log("  - All cookies:", document.cookie);
-      console.log("  - User ID found:", userId);
-      console.log("  - User role found:", userRole);
+      console.log("  - User ID found:", !!userId);
+      console.log("  - User role found:", !!userRole);
       console.log("  - Is logged in:", hasAuth);
 
       setIsLoggedIn(hasAuth);
@@ -59,12 +55,47 @@ export default function ProductsPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [allCategories, allProducts] = await Promise.all([
-          CategoryService.getAllCategoriesWithStockCount(),
-          ProductService.getAllProducts(),
+        const [categoriesRes, productsRes, stocksRes] = await Promise.all([
+          fetch("/api/categories"),
+          fetch("/api/products"),
+          fetch("/api/stocks"),
         ]);
-        setCategories(allCategories);
-        setProducts(allProducts);
+
+        const [categoriesData, productsData, stocksData] = await Promise.all([
+          categoriesRes.json(),
+          productsRes.json(),
+          stocksRes.json(),
+        ]);
+
+        if (
+          categoriesData.success &&
+          productsData.success &&
+          stocksData.success
+        ) {
+          // Count available stocks per product
+          const availableStocksByProduct: Record<string, number> = {};
+
+          if (Array.isArray(stocksData.data)) {
+            stocksData.data.forEach((stock: any) => {
+              if (stock.status === "available") {
+                availableStocksByProduct[stock.productId] =
+                  (availableStocksByProduct[stock.productId] || 0) + 1;
+              }
+            });
+          }
+
+          // Add available stock count to products
+          const productsWithStock = productsData.data.map(
+            (product: ProductDocument) => ({
+              ...product,
+              availableStockCount:
+                availableStocksByProduct[product._id ?? ""] || 0,
+            })
+          );
+
+          setCategories(categoriesData.data);
+          setProducts(productsWithStock);
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -82,18 +113,18 @@ export default function ProductsPage() {
 
   const filteredProducts = selectedCategory
     ? products
-        .filter((p) => p.categoryId === selectedCategory._id)
+        .filter((p) => p.categoryId === (selectedCategory._id ?? ""))
         .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
     : [];
 
   const handleSelectCategory = (category: CategoryWithStockCount) => {
     setSelectedCategory(category);
-    setSearchTerm(""); // Reset search when switching to product view
+    setSearchTerm("");
   };
 
   const handleBackToCategories = () => {
     setSelectedCategory(null);
-    setSearchTerm(""); // Reset search when going back
+    setSearchTerm("");
   };
 
   if (loading) {
@@ -112,7 +143,6 @@ export default function ProductsPage() {
         <div className="max-w-7xl mx-auto">
           {/* Header Section */}
           <div className="text-center mb-12">
-            {/* Main Title */}
             <div className="mb-4">
               <h1 className="text-4xl lg:text-5xl font-bold tracking-tight text-primary mb-4">
                 {selectedCategory ? (
@@ -143,7 +173,6 @@ export default function ProductsPage() {
             )}
 
             <div className="flex items-center justify-between gap-4">
-              {/* Search Bar - Left */}
               <div className="flex-1 max-w-md">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary" />
@@ -161,7 +190,6 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* Count & Filter - Right */}
               <div className="flex items-center gap-3">
                 <Badge className="bg-stone-900/50 border border-white/10 text-secondary px-4 py-2 whitespace-nowrap">
                   {selectedCategory ? (
@@ -171,11 +199,7 @@ export default function ProductsPage() {
                       </span>{" "}
                       of{" "}
                       <span className="text-[#00BCA8]">
-                        {
-                          products.filter(
-                            (p) => p.categoryId === selectedCategory._id
-                          ).length
-                        }
+                        {getProductCountInCategory(selectedCategory._id ?? "")}
                       </span>{" "}
                       products
                     </>
@@ -206,7 +230,6 @@ export default function ProductsPage() {
                     onClick={() => handleSelectCategory(category)}
                     className="cursor-pointer group bg-stone-900/50 border border-white/10 rounded-lg p-8 hover:border-[#00BCA8]/50 transition hover:bg-stone-900/70 hover:shadow-lg hover:shadow-[#00BCA8]/10"
                   >
-                    {/* Category Image */}
                     <div className="mb-6 overflow-hidden rounded-lg h-48 bg-stone-800/50 flex items-center justify-center relative">
                       <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-stone-900/40 z-10"></div>
                       <img
@@ -220,7 +243,6 @@ export default function ProductsPage() {
                       />
                     </div>
 
-                    {/* Category Info */}
                     <div>
                       <h3 className="text-xl font-bold text-primary mb-3">
                         {category.name}
@@ -230,7 +252,8 @@ export default function ProductsPage() {
                           Explore products →
                         </p>
                         <Badge className="bg-background text-secondary border-secondary pb-1">
-                          {getProductCountInCategory(category._id)} products
+                          {getProductCountInCategory(category._id ?? "")}{" "}
+                          products
                         </Badge>
                       </div>
                     </div>
@@ -255,11 +278,11 @@ export default function ProductsPage() {
                   {filteredProducts.map((product) => (
                     <div key={product._id} className="h-full">
                       <ProductCard
-                        _id={product._id}
+                        _id={product._id ?? ""}
                         name={product.name}
                         price={`Rp ${product.price.toLocaleString("id-ID")}`}
-                        stock={0}
-                        isOutOfStock={false}
+                        stock={product.availableStockCount}
+                        isOutOfStock={product.availableStockCount === 0}
                         isMostPopular={product.badge === "popular"}
                         cpuCore={product.cpuCore}
                         android={product.android}
@@ -278,10 +301,10 @@ export default function ProductsPage() {
               ) : (
                 <div className="text-center py-20">
                   <p className="text-lg text-secondary mb-2">
-                    No products found
+                    No products found in this category
                   </p>
                   <p className="text-sm text-secondary/60">
-                    Try adjusting your search terms
+                    Try searching or going back
                   </p>
                 </div>
               )}
