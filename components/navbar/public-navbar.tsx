@@ -9,11 +9,12 @@ import { useRouter } from "next/navigation";
 export function PublicNavbar() {
   const router = useRouter();
 
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  };
+  // const handleLogout = async () => {
+  //   await fetch("/api/auth/logout", { method: "POST" });
+  //   router.push("/login");
+  //   router.refresh();
+  // };
+
   return (
     <nav className="fixed top-0 w-full border-b border-white/10 bg-black z-50">
       <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">

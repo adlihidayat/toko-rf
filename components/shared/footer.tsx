@@ -2,7 +2,16 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, Phone, MapPin, Github, Twitter, Linkedin } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  MapPin,
+  Github,
+  Twitter,
+  Linkedin,
+  Instagram,
+} from "lucide-react";
+import { scrollToSection } from "@/lib/scroll-utils";
 
 export function Footer() {
   return (
@@ -12,11 +21,11 @@ export function Footer() {
           {/* Brand */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-5 h-5 bg-white flex items-center justify-center rounded-sm">
+              <div className="w-5 h-5 bg-green-400 flex items-center justify-center rounded-sm">
                 <span className="text-black font-bold text-xs">▲</span>
               </div>
               <span className="font-medium text-sm tracking-wide text-[#ededed]">
-                STORE
+                TokoRF
               </span>
             </div>
             <p className="text-sm text-[#a1a1a1]">
@@ -36,18 +45,12 @@ export function Footer() {
               >
                 Home
               </Link>
-              <Link
-                href="/products"
-                className="text-[#a1a1a1] hover:text-[#ededed] transition text-sm"
+              <button
+                onClick={() => scrollToSection("choose-Product")}
+                className="text-[#a1a1a1] hover:text-[#ededed] transition text-sm  text-left"
               >
                 Products
-              </Link>
-              <Link
-                href="/dashboard"
-                className="text-[#a1a1a1] hover:text-[#ededed] transition text-sm"
-              >
-                Dashboard
-              </Link>
+              </button>
             </nav>
           </div>
 
@@ -81,22 +84,22 @@ export function Footer() {
             <h3 className="font-semibold text-[#ededed] text-sm">Contact Us</h3>
             <div className="flex flex-col gap-3">
               <a
-                href="mailto:support@store.com"
+                href="mailto:tokoRF@store.com"
                 className="flex items-center gap-2 text-[#a1a1a1] hover:text-[#ededed] transition text-sm"
               >
                 <Mail className="w-4 h-4" />
-                support@store.com
+                tokoRF@store.com
               </a>
               <a
                 href="tel:+1234567890"
                 className="flex items-center gap-2 text-[#a1a1a1] hover:text-[#ededed] transition text-sm"
               >
                 <Phone className="w-4 h-4" />
-                +1 (234) 567-890
+                (+62)81256708920
               </a>
               <div className="flex items-center gap-2 text-[#a1a1a1] text-sm">
                 <MapPin className="w-4 h-4" />
-                Jakarta, Indonesia
+                Medan, Indonesia
               </div>
             </div>
           </div>
@@ -105,7 +108,7 @@ export function Footer() {
         {/* Social Links & Copyright */}
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-[#a1a1a1] text-xs">
-            &copy; 2025 Store. All rights reserved.
+            &copy; 2025 TokoRF. All rights reserved.
           </p>
 
           <div className="flex items-center gap-4">
@@ -128,7 +131,7 @@ export function Footer() {
               className="text-[#a1a1a1] hover:text-[#52a8ff] transition"
               aria-label="LinkedIn"
             >
-              <Linkedin className="w-4 h-4" />
+              <Instagram className="w-4 h-4" />
             </a>
           </div>
         </div>

@@ -1,12 +1,34 @@
-// components/home/choose-package.tsx
+// components/home/ready-to-start.tsx
 "use client";
-import Link from "next/link";
+import { useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { CustomButton } from "../ui/custom-button";
+import { useUserRole } from "@/app/providers";
 
 export function ReadyToStart() {
+  const { role } = useUserRole();
+  const isLoggedIn = role === "user" || role === "admin";
+  const router = useRouter();
+
+  const handleBrowseMore = useCallback(() => {
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+    router.push("/products");
+  }, [isLoggedIn, router]);
+
+  const handleAccountAction = useCallback(() => {
+    if (!isLoggedIn) {
+      router.push("/login");
+      return;
+    }
+    router.push("/profile");
+  }, [isLoggedIn, router]);
+
   return (
     <section className="py-20 px-8 mt-20">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto flex items-center flex-col">
         {/* Section Header */}
         <div className="text-center mb-10">
           <div className="flex justify-center mb-6 relative">
@@ -26,14 +48,18 @@ export function ReadyToStart() {
           </h2>
         </div>
 
-        {/* Browse More Button */}
-        <div className="flex justify-center gap-x-2">
-          <Link href="/products">
-            <CustomButton variant="black">Browse More Packages</CustomButton>
-          </Link>
-          <Link href="/products">
-            <CustomButton variant="white">Login to account</CustomButton>
-          </Link>
+        {/* Action Buttons */}
+        <div className="flex flex-col md:flex-row  justify-center gap-x-2 gap-y-3 w-40">
+          <CustomButton
+            variant="black"
+            onClick={handleBrowseMore}
+            className="md:w-48"
+          >
+            Browse More Packages
+          </CustomButton>
+          <CustomButton variant="white" onClick={handleAccountAction}>
+            {isLoggedIn ? "See Profile" : "Login to account"}
+          </CustomButton>
         </div>
       </div>
     </section>
