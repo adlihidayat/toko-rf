@@ -35,6 +35,7 @@ import {
   Star,
   Box,
   Ellipsis,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   CreateProductInput,
@@ -54,6 +55,8 @@ import {
 import { toDate } from "@/lib/utils/date";
 
 type ViewMode = "products" | "stocks" | "purchases" | "categories";
+type SortField = "date" | "name" | "price" | "status";
+type SortOrder = "asc" | "desc";
 
 export default function ProductManagementPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("products");
@@ -64,6 +67,8 @@ export default function ProductManagementPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const ITEMS_PER_PAGE = 10;
 
   // Dialog states
@@ -122,6 +127,10 @@ export default function ProductManagementPage() {
         const completedPurchases = purchasesData.data.filter(
           (p: PurchaseWithDetails) => p.paymentStatus === "completed"
         );
+        console.log(
+          "📋 Filtered completed purchases:",
+          completedPurchases.length
+        );
         setPurchases(completedPurchases);
       }
 
@@ -131,6 +140,55 @@ export default function ProductManagementPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Sort function
+  const sortData = (dataToSort: any[]) => {
+    return [...dataToSort].sort((a, b) => {
+      let compareA: any;
+      let compareB: any;
+
+      if (viewMode === "products") {
+        if (sortField === "date") {
+          compareA = new Date(a.createdAt || 0).getTime();
+          compareB = new Date(b.createdAt || 0).getTime();
+        } else if (sortField === "name") {
+          compareA = a.name.toLowerCase();
+          compareB = b.name.toLowerCase();
+        } else if (sortField === "price") {
+          compareA = a.price;
+          compareB = b.price;
+        }
+      } else if (viewMode === "stocks") {
+        if (sortField === "date") {
+          compareA = new Date(a.addedDate || 0).getTime();
+          compareB = new Date(b.addedDate || 0).getTime();
+        } else if (sortField === "name") {
+          compareA = a.productName.toLowerCase();
+          compareB = b.productName.toLowerCase();
+        } else if (sortField === "status") {
+          compareA = a.status.toLowerCase();
+          compareB = b.status.toLowerCase();
+        }
+      } else if (viewMode === "purchases") {
+        if (sortField === "date") {
+          compareA = new Date(a.createdAt || 0).getTime();
+          compareB = new Date(b.createdAt || 0).getTime();
+        } else if (sortField === "name") {
+          compareA = a.productName.toLowerCase();
+          compareB = b.productName.toLowerCase();
+        }
+      } else if (viewMode === "categories") {
+        if (sortField === "name") {
+          compareA = a.name.toLowerCase();
+          compareB = b.name.toLowerCase();
+        }
+      }
+
+      if (compareA < compareB) return sortOrder === "asc" ? -1 : 1;
+      if (compareA > compareB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
   };
 
   // Filter data
@@ -156,9 +214,12 @@ export default function ProductManagementPage() {
           c.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
 
-  const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE);
+  // Apply sorting
+  const sortedData = sortData(filteredData);
+
+  const totalPages = Math.ceil(sortedData.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedData = filteredData.slice(
+  const paginatedData = sortedData.slice(
     startIndex,
     startIndex + ITEMS_PER_PAGE
   );
@@ -166,6 +227,16 @@ export default function ProductManagementPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, viewMode]);
+
+  // Toggle sort
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("desc");
+    }
+  };
 
   // Calculate stats
   const totalStock = stocks.length;
@@ -220,7 +291,7 @@ export default function ProductManagementPage() {
         if (response.ok) {
           const { data: updated } = await response.json();
           console.log("✅ Product updated successfully:", updated);
-          await fetchAllData(); // Refresh all data
+          await fetchAllData();
           setIsProductDialogOpen(false);
         } else {
           const error = await response.json();
@@ -238,7 +309,7 @@ export default function ProductManagementPage() {
         if (response.ok) {
           const { data: newProduct } = await response.json();
           console.log("✅ Product created successfully:", newProduct);
-          await fetchAllData(); // Refresh all data
+          await fetchAllData();
           setIsProductDialogOpen(false);
         } else {
           const error = await response.json();
@@ -469,6 +540,27 @@ export default function ProductManagementPage() {
     }
   };
 
+  // Helper to render sort button
+  const SortButton = ({
+    field,
+    label,
+  }: {
+    field: SortField;
+    label: string;
+  }) => (
+    <button
+      onClick={() => handleSort(field)}
+      className="flex items-center gap-1 hover:text-primary transition"
+    >
+      {label}
+      <ArrowUpDown
+        className={`w-4 h-4 ${
+          sortField === field ? "text-primary" : "text-secondary"
+        }`}
+      />
+    </button>
+  );
+
   return (
     <div className="pt-10 pb-10 px-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -633,7 +725,7 @@ export default function ProductManagementPage() {
         )}
       </div>
 
-      {/* Table - Rest of your table code stays the same */}
+      {/* Table */}
       <div className="bg-background border border-white/10 rounded-lg overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-secondary">Loading...</div>
@@ -643,13 +735,16 @@ export default function ProductManagementPage() {
           </div>
         ) : (
           <Table>
-            {/* Your existing table code - keeping it as is for brevity */}
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 {viewMode === "products" ? (
                   <>
-                    <TableHead className="text-primary w-96">Title</TableHead>
-                    <TableHead className="text-primary">Price</TableHead>
+                    <TableHead className="text-primary w-96">
+                      <SortButton field="name" label="Title" />
+                    </TableHead>
+                    <TableHead className="text-primary">
+                      <SortButton field="price" label="Price" />
+                    </TableHead>
                     <TableHead className="text-primary">Stock Count</TableHead>
                     <TableHead className="text-primary">Min Purchase</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
@@ -657,15 +752,23 @@ export default function ProductManagementPage() {
                   </>
                 ) : viewMode === "stocks" ? (
                   <>
-                    <TableHead className="text-primary w-96">Product</TableHead>
+                    <TableHead className="text-primary w-96">
+                      <SortButton field="name" label="Product" />
+                    </TableHead>
                     <TableHead className="text-primary">Redeem Code</TableHead>
-                    <TableHead className="text-primary">Added Date</TableHead>
-                    <TableHead className="text-primary">Status</TableHead>
+                    <TableHead className="text-primary">
+                      <SortButton field="date" label="Added Date" />
+                    </TableHead>
+                    <TableHead className="text-primary">
+                      <SortButton field="status" label="Status" />
+                    </TableHead>
                     <TableHead className="text-primary text-right"></TableHead>
                   </>
                 ) : viewMode === "purchases" ? (
                   <>
-                    <TableHead className="text-primary w-60">Product</TableHead>
+                    <TableHead className="text-primary w-60">
+                      <SortButton field="name" label="Product" />
+                    </TableHead>
                     <TableHead className="text-primary w-60">
                       Customer
                     </TableHead>
@@ -674,13 +777,15 @@ export default function ProductManagementPage() {
                     </TableHead>
                     <TableHead className="text-primary">Amount</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
-                    <TableHead className="text-primary">Date</TableHead>
+                    <TableHead className="text-primary">
+                      <SortButton field="date" label="Date" />
+                    </TableHead>
                   </>
                 ) : (
                   <>
                     <TableHead className="text-primary w-10">Icon</TableHead>
                     <TableHead className="text-primary pl-5 w-80">
-                      Category Name
+                      <SortButton field="name" label="Category Name" />
                     </TableHead>
                     <TableHead className="text-primary">Total Stock</TableHead>
                     <TableHead className="text-primary text-right"></TableHead>
@@ -689,7 +794,6 @@ export default function ProductManagementPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {/* Your existing table body rendering logic */}
               {viewMode === "products"
                 ? (paginatedData as ProductDocument[]).map((product) => {
                     const stockCount = stocks.filter(

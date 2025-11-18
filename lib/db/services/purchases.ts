@@ -8,33 +8,102 @@ import { PurchaseDocument, PurchaseWithDetails } from '@/lib/types';
 
 export class PurchaseService {
   static async getAllPurchases(): Promise<PurchaseWithDetails[]> {
-    await connectDB();
+    try {
+      await connectDB();
+      console.log('📝 Connecting to database for getAllPurchases...');
 
-    // Sort by createdAt descending (newest first)
-    const purchases = await Purchase.find()
-      .sort({ createdAt: -1 })
-      .lean();
+      // Sort by createdAt descending (newest first)
+      const purchases = await Purchase.find()
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
 
-    const purchasesWithDetails = await Promise.all(
-      purchases.map(async (purchase) => {
-        const product = await Product.findById(purchase.productId).lean();
-        const user = await User.findById(purchase.userId).lean();
-        const stock = await Stock.findById(purchase.stockId).lean();
+      console.log('📦 Found total purchases:', purchases.length);
 
-        return {
-          ...purchase,
-          _id: purchase._id?.toString() || '',
-          productName: product?.name || 'Unknown',
-          productPrice: product?.price || 0,
-          productId: purchase.productId,
-          userName: user?.username || 'Unknown',
-          redeemCode: stock?.redeemCode || 'N/A',
-          rating: purchase.rating || null,
-        } as PurchaseWithDetails;
-      })
-    );
+      if (purchases.length === 0) {
+        console.log('ℹ️ No purchases found in database');
+        return [];
+      }
 
-    return purchasesWithDetails;
+      const purchasesWithDetails = await Promise.all(
+        purchases.map(async (purchase) => {
+          try {
+            // Fetch product
+            const product = await Product.findById(purchase.productId).lean();
+            if (!product) {
+              console.warn(
+                `⚠️ Product not found for ID: ${purchase.productId} in purchase ${purchase._id}`
+              );
+            }
+
+            // Fetch user
+            const user = await User.findById(purchase.userId).lean();
+            if (!user) {
+              console.warn(
+                `⚠️ User not found for ID: ${purchase.userId} in purchase ${purchase._id}`
+              );
+            }
+
+            // Fetch stock only if stockId exists
+            let stock = null;
+            if (purchase.stockId) {
+              stock = await Stock.findById(purchase.stockId).lean();
+              if (!stock) {
+                console.warn(
+                  `⚠️ Stock not found for ID: ${purchase.stockId} in purchase ${purchase._id}`
+                );
+              }
+            }
+
+            return {
+              ...purchase,
+              _id: purchase._id?.toString() || '',
+              productName: product?.name || 'Unknown Product',
+              productPrice: product?.price || 0,
+              productId: purchase.productId,
+              userId: purchase.userId,
+              userName: user?.username || 'Unknown User',
+              redeemCode:
+                stock && stock.status === 'paid'
+                  ? stock.redeemCode
+                  : purchase.paymentStatus === 'completed'
+                    ? 'Processing...'
+                    : purchase.paymentStatus === 'pending'
+                      ? 'Awaiting Payment'
+                      : 'Payment Failed',
+              rating: purchase.rating || null,
+              paymentStatus: purchase.paymentStatus,
+              totalPaid: purchase.totalPaid,
+              createdAt: purchase.createdAt,
+            } as PurchaseWithDetails;
+          } catch (mappingError) {
+            console.error('❌ Error mapping purchase:', purchase._id, mappingError);
+            // Return a fallback object instead of throwing
+            return {
+              ...purchase,
+              _id: purchase._id?.toString() || '',
+              productName: 'Error Loading',
+              productPrice: 0,
+              productId: purchase.productId,
+              userId: purchase.userId,
+              userName: 'Error Loading',
+              redeemCode: 'Error',
+              rating: purchase.rating || null,
+              paymentStatus: purchase.paymentStatus,
+              totalPaid: purchase.totalPaid,
+              createdAt: purchase.createdAt,
+            } as PurchaseWithDetails;
+          }
+        })
+      );
+
+      console.log('✅ Successfully mapped all purchases with details');
+      return purchasesWithDetails;
+    } catch (error) {
+      console.error('❌ Critical error in getAllPurchases:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+      throw error;
+    }
   }
 
   static async getUserPurchases(userId: string): Promise<PurchaseWithDetails[]> {
@@ -46,12 +115,13 @@ export class PurchaseService {
       // Sort by createdAt descending (newest first)
       const purchases = await Purchase.find({ userId })
         .sort({ createdAt: -1 })
-        .lean();
+        .lean()
+        .exec();
 
       console.log('📦 Found purchases:', purchases.length);
 
       if (purchases.length === 0) {
-        console.log('⚠️ No purchases found for this user');
+        console.log('ℹ️ No purchases found for this user');
         return [];
       }
 
@@ -89,8 +159,8 @@ export class PurchaseService {
               productName: product?.name || 'Unknown Product',
               productPrice: product?.price || 0,
               productId: purchase.productId,
+              userId: purchase.userId,
               userName: user?.username || 'Unknown User',
-              // Show redeem code only if stock is PAID, otherwise show status message
               redeemCode:
                 stock && stock.status === 'paid'
                   ? stock.redeemCode
@@ -100,6 +170,9 @@ export class PurchaseService {
                       ? 'Awaiting Payment'
                       : 'Payment Failed',
               rating: purchase.rating || null,
+              paymentStatus: purchase.paymentStatus,
+              totalPaid: purchase.totalPaid,
+              createdAt: purchase.createdAt,
             } as PurchaseWithDetails;
           } catch (mappingError) {
             console.error('❌ Error mapping purchase:', purchase._id, mappingError);
@@ -109,9 +182,13 @@ export class PurchaseService {
               productName: 'Error Loading',
               productPrice: 0,
               productId: purchase.productId,
+              userId: purchase.userId,
               userName: 'Error Loading',
               redeemCode: 'Error',
               rating: purchase.rating || null,
+              paymentStatus: purchase.paymentStatus,
+              totalPaid: purchase.totalPaid,
+              createdAt: purchase.createdAt,
             } as PurchaseWithDetails;
           }
         })
@@ -126,30 +203,35 @@ export class PurchaseService {
   }
 
   static async getUserStats(userId: string) {
-    await connectDB();
+    try {
+      await connectDB();
 
-    const purchases = await Purchase.find({
-      userId,
-      paymentStatus: 'completed',
-    }).lean();
+      const purchases = await Purchase.find({
+        userId,
+        paymentStatus: 'completed',
+      }).lean();
 
-    const totalPurchases = purchases.length;
-    const totalSpent = purchases.reduce((sum, p) => sum + p.totalPaid, 0);
+      const totalPurchases = purchases.length;
+      const totalSpent = purchases.reduce((sum, p) => sum + p.totalPaid, 0);
 
-    const ratedPurchases = purchases.filter((p) => p.rating !== null);
-    const avgRating =
-      ratedPurchases.length > 0
-        ? (
-          ratedPurchases.reduce((sum, p) => sum + (p.rating || 0), 0) /
-          ratedPurchases.length
-        ).toFixed(1)
-        : '0';
+      const ratedPurchases = purchases.filter((p) => p.rating !== null);
+      const avgRating =
+        ratedPurchases.length > 0
+          ? (
+            ratedPurchases.reduce((sum, p) => sum + (p.rating || 0), 0) /
+            ratedPurchases.length
+          ).toFixed(1)
+          : '0';
 
-    return {
-      totalPurchases,
-      totalSpent,
-      avgRating,
-    };
+      return {
+        totalPurchases,
+        totalSpent,
+        avgRating,
+      };
+    } catch (error) {
+      console.error('❌ Error in getUserStats:', error);
+      throw error;
+    }
   }
 
   static async createPendingPurchase(

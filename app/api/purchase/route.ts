@@ -5,12 +5,25 @@ import { StockService } from '@/lib/db/services/stocks';
 
 export async function GET() {
   try {
+    console.log('📋 Fetching all purchases...');
+
     const purchases = await PurchaseService.getAllPurchases();
+
+    console.log('✅ Purchases fetched successfully:', purchases.length);
     return NextResponse.json({ success: true, data: purchases });
   } catch (error) {
-    console.error('Error fetching purchases:', error);
+    console.error('❌ Error fetching purchases:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
+
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch purchases' },
+      {
+        success: false,
+        error: 'Failed to fetch purchases',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
@@ -146,7 +159,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error('Error creating purchase:', error);
+    console.error('❌ Error creating purchase:', error);
     console.error('Error details:', {
       message: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined
