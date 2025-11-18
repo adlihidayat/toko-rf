@@ -37,6 +37,8 @@ import {
   Loader,
   Copy,
   Check,
+  XIcon,
+  HourglassIcon,
 } from "lucide-react";
 import { PurchaseWithDetails, UserDocument } from "@/lib/types";
 import { toDate, ensureString } from "@/lib/utils/date";
@@ -608,11 +610,20 @@ export default function UserProfilePage() {
                           )}
                         </button>
                       ) : purchase.paymentStatus === "pending" ? (
-                        "⏳ Awaiting Payment"
+                        <div className="flex gap-x-1 text-stone-400">
+                          <HourglassIcon className="w-3" />
+                          <span className="mt-0.5">Awaiting Payment</span>
+                        </div>
                       ) : purchase.paymentStatus === "cancelled" ? (
-                        "❌ Cancelled"
+                        <div className="flex gap-x-1 text-red-400">
+                          <XIcon className="w-4" />
+                          <span className="mt-px">Payment Failed</span>
+                        </div>
                       ) : purchase.paymentStatus === "failed" ? (
-                        "❌ Payment Failed"
+                        <div className="flex gap-x-1 text-red-400">
+                          <XIcon className="w-4" />
+                          <span className="mt-px">Payment Failed</span>
+                        </div>
                       ) : (
                         "—"
                       )}
@@ -650,7 +661,7 @@ export default function UserProfilePage() {
                           <Button
                             onClick={() => handleCompletePayment(purchaseId)}
                             disabled={isActionLoading}
-                            className="h-8 px-3 text-xs bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 gap-1"
+                            className="h-8 px-3 text-xs bg-primary text-black hover:bg-green-500/30 border border-green-500/30 gap-1"
                           >
                             {isActionLoading ? (
                               <Loader className="w-3 h-3 animate-spin" />
@@ -726,7 +737,9 @@ export default function UserProfilePage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-secondary text-xs">—</span>
+                        <span className="text-secondary text-xs">
+                          payment cancelled
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
