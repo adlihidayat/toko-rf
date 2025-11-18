@@ -20,6 +20,13 @@ declare global {
   }
 }
 
+// FORCE SANDBOX MODE
+const USE_SANDBOX = true;
+const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "";
+const SNAP_URL = USE_SANDBOX
+  ? "https://app.sandbox.midtrans.com/snap/snap.js"
+  : "https://app.midtrans.com/snap/snap.js";
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -103,6 +110,8 @@ function CheckoutContent() {
       setProcessing(true);
       setError(null);
 
+      console.log("🔄 Creating payment transaction...");
+
       // Create payment transaction
       const response = await fetch("/api/payment/create", {
         method: "POST",
@@ -118,38 +127,46 @@ function CheckoutContent() {
       const { data, success, error: apiError } = await response.json();
 
       if (!success) {
+        console.error("❌ Payment creation failed:", apiError);
         setError(apiError || "Payment processing failed");
         setProcessing(false);
         return;
       }
 
+      console.log(
+        "✅ Payment token received:",
+        data.token.substring(0, 20) + "..."
+      );
+      console.log("🎯 Opening Snap popup in SANDBOX mode");
+
       // Open Midtrans Snap popup
       if (window.snap) {
         window.snap.pay(data.token, {
           onSuccess: function (result: any) {
-            console.log("Payment success:", result);
+            console.log("✅ Payment success:", result);
             router.push("/profile?tab=history&payment=success");
           },
           onPending: function (result: any) {
-            console.log("Payment pending:", result);
+            console.log("⏳ Payment pending:", result);
             router.push("/profile?tab=history&payment=pending");
           },
           onError: function (result: any) {
-            console.log("Payment error:", result);
+            console.error("❌ Payment error:", result);
             setError("Payment failed. Please try again.");
             setProcessing(false);
           },
           onClose: function () {
-            console.log("Payment popup closed");
+            console.log("🚪 Payment popup closed");
             setProcessing(false);
           },
         });
       } else {
+        console.error("❌ Snap not available");
         setError("Payment system not available");
         setProcessing(false);
       }
     } catch (error) {
-      console.error("Failed to process payment:", error);
+      console.error("❌ Failed to process payment:", error);
       setError("Payment processing failed. Please try again.");
       setProcessing(false);
     }
@@ -186,31 +203,40 @@ function CheckoutContent() {
     );
   }
 
-  const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "";
-  const snapUrl =
-    process.env.NODE_ENV === "production"
-      ? "https://app.midtrans.com/snap/snap.js"
-      : "https://app.sandbox.midtrans.com/snap/snap.js";
-
   return (
     <>
-      {/* Load Midtrans Snap.js */}
+      {/* Load Midtrans Snap.js - SANDBOX VERSION */}
       <Script
-        src={snapUrl}
-        data-client-key={clientKey}
+        src={SNAP_URL}
+        data-client-key={MIDTRANS_CLIENT_KEY}
         onLoad={() => {
-          console.log("Midtrans Snap loaded");
+          console.log("✅ Midtrans Snap loaded (SANDBOX MODE)");
+          console.log("📍 Snap URL:", SNAP_URL);
+          console.log(
+            "🔑 Client Key:",
+            MIDTRANS_CLIENT_KEY.substring(0, 15) + "..."
+          );
           setSnapLoaded(true);
         }}
         onError={() => {
-          console.error("Failed to load Midtrans Snap");
+          console.error("❌ Failed to load Midtrans Snap");
           setError("Failed to load payment system");
         }}
+        strategy="afterInteractive"
       />
 
       <main className="min-h-screen bg-black text-primary md:px-24">
         <section className="pb-20 px-8 pt-10">
           <div className="max-w-4xl mx-auto">
+            {/* Sandbox Mode Indicator */}
+            {USE_SANDBOX && (
+              <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                <p className="text-yellow-300 text-sm text-center">
+                  🧪 <strong>SANDBOX MODE</strong> - Use test payment methods
+                </p>
+              </div>
+            )}
+
             {/* Back Button */}
             <Button
               onClick={() => router.back()}
@@ -398,7 +424,7 @@ function CheckoutContent() {
                           Loading Payment...
                         </>
                       ) : (
-                        "Pay with Midtrans"
+                        `Pay with Midtrans ${USE_SANDBOX ? "(Sandbox)" : ""}`
                       )}
                     </Button>
 
@@ -406,6 +432,11 @@ function CheckoutContent() {
                     <div className="bg-stone-800/30 border border-white/10 rounded-lg p-3">
                       <p className="text-xs text-secondary text-center">
                         🔒 Secured by Midtrans Payment Gateway
+                        {USE_SANDBOX && (
+                          <span className="block mt-1 text-yellow-400">
+                            Test Mode - No real charges
+                          </span>
+                        )}
                       </p>
                     </div>
                   </CardContent>

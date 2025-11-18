@@ -1,5 +1,5 @@
 // lib/midtrans/service.ts
-import { midtransConfig, createAuthString } from './config';
+import { midtransConfig, createAuthString, MIDTRANS_MODE } from './config';
 
 interface TransactionDetails {
   order_id: string;
@@ -70,10 +70,11 @@ export class MidtransService {
       }
 
       console.log('🔄 Midtrans API Request:', {
+        mode: MIDTRANS_MODE,
         url: midtransConfig.apiUrl,
         orderId,
         grossAmount,
-        hasAuth: !!authString,
+        serverKey: serverKey.substring(0, 15) + '...',
       });
 
       const response = await fetch(midtransConfig.apiUrl, {
@@ -95,7 +96,11 @@ export class MidtransService {
       }
 
       const data: SnapTokenResponse = await response.json();
-      console.log('✅ Midtrans token created successfully');
+      console.log('✅ Midtrans token created successfully:', {
+        tokenPreview: data.token.substring(0, 20) + '...',
+        mode: MIDTRANS_MODE
+      });
+
       return data;
     } catch (error) {
       console.error('❌ Midtrans transaction creation error:', error);
@@ -115,9 +120,17 @@ export class MidtransService {
       }
 
       const authString = createAuthString(serverKey);
-      const statusUrl = midtransConfig.isProduction
-        ? `https://api.midtrans.com/v2/${orderId}/status`
-        : `https://api.sandbox.midtrans.com/v2/${orderId}/status`;
+
+      // Use the correct URL based on sandbox/production mode
+      const statusUrl = midtransConfig.isSandbox
+        ? `https://api.sandbox.midtrans.com/v2/${orderId}/status`
+        : `https://api.midtrans.com/v2/${orderId}/status`;
+
+      console.log('🔍 Verifying transaction status:', {
+        orderId,
+        mode: MIDTRANS_MODE,
+        url: statusUrl
+      });
 
       const response = await fetch(statusUrl, {
         method: 'GET',
@@ -167,6 +180,13 @@ export class MidtransService {
     } else if (transactionStatus === 'pending') {
       status = 'pending';
     }
+
+    console.log('📊 Parsed notification:', {
+      status,
+      transactionStatus,
+      fraudStatus,
+      mode: MIDTRANS_MODE
+    });
 
     return {
       status,
