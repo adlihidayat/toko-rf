@@ -100,6 +100,25 @@ export async function POST(request: NextRequest) {
       const orderId = purchaseIds.join('-'); // Multiple purchase IDs joined
       console.log('💳 Creating Midtrans transaction for order:', orderId);
 
+      // ============ DEBUG: Check env variables ============
+      const serverKey = process.env.MIDTRANS_SERVER_KEY;
+      const nodeEnv = process.env.NODE_ENV;
+
+      console.log('🔑 Environment Check:', {
+        hasServerKey: !!serverKey,
+        serverKeyPrefix: serverKey?.substring(0, 10) + '...',
+        nodeEnv,
+        totalPaid,
+        quantity,
+      });
+
+      if (!serverKey) {
+        console.error('❌ MIDTRANS_SERVER_KEY is missing!');
+        throw new Error(
+          `Missing MIDTRANS_SERVER_KEY. Please check Vercel environment variables.`
+        );
+      }
+
       const snapResponse = await MidtransService.createTransaction(
         orderId,
         totalPaid,

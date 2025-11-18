@@ -45,7 +45,13 @@ export class MidtransService {
     itemDetails?: ItemDetail[]
   ): Promise<SnapTokenResponse> {
     try {
-      const authString = createAuthString(midtransConfig.serverKey);
+      const serverKey = process.env.MIDTRANS_SERVER_KEY;
+
+      if (!serverKey) {
+        throw new Error('MIDTRANS_SERVER_KEY is not set');
+      }
+
+      const authString = createAuthString(serverKey);
 
       const requestBody: SnapTokenRequest = {
         transaction_details: {
@@ -63,6 +69,13 @@ export class MidtransService {
         requestBody.item_details = itemDetails;
       }
 
+      console.log('🔄 Midtrans API Request:', {
+        url: midtransConfig.apiUrl,
+        orderId,
+        grossAmount,
+        hasAuth: !!authString,
+      });
+
       const response = await fetch(midtransConfig.apiUrl, {
         method: 'POST',
         headers: {
@@ -73,15 +86,19 @@ export class MidtransService {
         body: JSON.stringify(requestBody),
       });
 
+      console.log('📡 Midtrans API Response Status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error_messages?.[0] || 'Failed to create transaction');
+        console.error('❌ Midtrans API Error Response:', errorData);
+        throw new Error(errorData.error_messages?.[0] || `Midtrans error: ${response.status}`);
       }
 
       const data: SnapTokenResponse = await response.json();
+      console.log('✅ Midtrans token created successfully');
       return data;
     } catch (error) {
-      console.error('Midtrans transaction creation error:', error);
+      console.error('❌ Midtrans transaction creation error:', error);
       throw error;
     }
   }
@@ -91,7 +108,13 @@ export class MidtransService {
    */
   static async verifyTransactionStatus(orderId: string): Promise<any> {
     try {
-      const authString = createAuthString(midtransConfig.serverKey);
+      const serverKey = process.env.MIDTRANS_SERVER_KEY;
+
+      if (!serverKey) {
+        throw new Error('MIDTRANS_SERVER_KEY is not set');
+      }
+
+      const authString = createAuthString(serverKey);
       const statusUrl = midtransConfig.isProduction
         ? `https://api.midtrans.com/v2/${orderId}/status`
         : `https://api.sandbox.midtrans.com/v2/${orderId}/status`;
