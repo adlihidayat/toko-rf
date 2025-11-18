@@ -661,7 +661,7 @@ export default function UserProfilePage() {
                           <Button
                             onClick={() => handleCompletePayment(purchaseId)}
                             disabled={isActionLoading}
-                            className="h-8 px-3 text-xs bg-primary text-black hover:bg-green-500/30 border border-green-500/30 gap-1"
+                            className="h-8 px-3 text-xs bg-primary text-black hover:bg-primary/70 border cursor-pointer gap-1"
                           >
                             {isActionLoading ? (
                               <Loader className="w-3 h-3 animate-spin" />
@@ -673,7 +673,7 @@ export default function UserProfilePage() {
                           <Button
                             onClick={() => handleCancelPurchase(purchaseId)}
                             disabled={isActionLoading}
-                            className="h-8 px-3 text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 gap-1"
+                            className="h-8 px-3 text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 gap-1 cursor-pointer"
                           >
                             {isActionLoading ? (
                               <Loader className="w-3 h-3 animate-spin" />
