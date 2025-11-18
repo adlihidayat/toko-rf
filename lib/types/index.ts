@@ -122,7 +122,7 @@ export interface PurchaseDocument {
   stockId: string;
   quantity: number;
   totalPaid: number;
-  paymentStatus: "pending" | "completed" | "cancelled";
+  paymentStatus: "pending" | "completed" | "failed" | "cancelled";
   rating?: number | null;
   createdAt?: Date;
   updatedAt?: Date;

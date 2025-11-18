@@ -31,6 +31,12 @@ import {
   Mail,
   User,
   Phone,
+  RefreshCw,
+  CreditCard,
+  Trash2,
+  Loader,
+  Copy,
+  Check,
 } from "lucide-react";
 import { PurchaseWithDetails, UserDocument } from "@/lib/types";
 import { toDate, ensureString } from "@/lib/utils/date";
@@ -51,6 +57,10 @@ export default function UserProfilePage() {
   const [ratingStates, setRatingStates] = useState<
     Record<string, number | null>
   >({});
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const ITEMS_PER_PAGE = 10;
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -66,34 +76,50 @@ export default function UserProfilePage() {
   }, []);
 
   // Fetch user data and purchases
-  useEffect(() => {
+  const fetchData = async () => {
     if (!userId) return;
 
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [userRes, purchasesRes] = await Promise.all([
-          fetch("/api/auth/me", {
-            credentials: "include",
-          }),
-          fetch(`/api/purchase/user/${userId}`, {
-            credentials: "include",
-          }),
-        ]);
+    try {
+      setLoading(true);
+      console.log("🔄 Fetching data for userId:", userId);
 
-        if (!userRes.ok) throw new Error("Failed to fetch user");
+      const [userRes, purchasesRes] = await Promise.all([
+        fetch("/api/auth/me", {
+          credentials: "include",
+          cache: "no-store",
+        }),
+        fetch(`/api/purchase/user/${userId}`, {
+          credentials: "include",
+          cache: "no-store",
+        }),
+      ]);
 
-        const userData = await userRes.json();
+      console.log("User response status:", userRes.status);
+      console.log("Purchases response status:", purchasesRes.status);
+
+      if (!userRes.ok) {
+        console.error("Failed to fetch user:", userRes.status);
+        throw new Error("Failed to fetch user");
+      }
+
+      const userData = await userRes.json();
+      console.log("✅ User data:", userData);
+
+      if (userData) {
+        setUser(userData);
+        setEditedUsername(userData.username);
+        setEditedPhoneNumber(userData.phoneNumber);
+      }
+
+      if (purchasesRes.ok) {
         const purchasesData = await purchasesRes.json();
-
-        if (userData) {
-          setUser(userData);
-          setEditedUsername(userData.username);
-          setEditedPhoneNumber(userData.phoneNumber);
-        }
+        console.log("✅ Purchases response:", purchasesData);
 
         if (purchasesData.success) {
-          console.log("Purchases fetched:", purchasesData.data);
+          console.log(
+            "📦 Purchases fetched:",
+            purchasesData.data.purchases.length
+          );
           setPurchases(purchasesData.data.purchases);
           setStats(purchasesData.data.stats);
 
@@ -105,13 +131,19 @@ export default function UserProfilePage() {
           );
           setRatingStates(initialRatings);
         }
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setLoading(false);
+      } else {
+        console.error("Failed to fetch purchases:", purchasesRes.status);
+        const errorData = await purchasesRes.json();
+        console.error("Error details:", errorData);
       }
-    };
+    } catch (error) {
+      console.error("❌ Failed to fetch data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchData();
   }, [userId]);
 
@@ -140,7 +172,9 @@ export default function UserProfilePage() {
       );
       setPurchases(updated);
 
-      const ratedPurchases = updated.filter((p) => p.rating !== null);
+      const ratedPurchases = updated.filter(
+        (p) => p.rating !== null && p.paymentStatus === "completed"
+      );
       const avgRating =
         ratedPurchases.length > 0
           ? (
@@ -176,7 +210,9 @@ export default function UserProfilePage() {
       );
       setPurchases(updated);
 
-      const ratedPurchases = updated.filter((p) => p.rating !== null);
+      const ratedPurchases = updated.filter(
+        (p) => p.rating !== null && p.paymentStatus === "completed"
+      );
       const avgRating =
         ratedPurchases.length > 0
           ? (
@@ -188,6 +224,98 @@ export default function UserProfilePage() {
     } catch (error) {
       console.error("Failed to remove rating:", error);
     }
+  };
+
+  const handleCompletePayment = async (purchaseId: string | undefined) => {
+    if (!purchaseId) return;
+
+    try {
+      setActionLoading((prev) => ({ ...prev, [purchaseId]: true }));
+      console.log("💳 Completing payment for purchase:", purchaseId);
+
+      const response = await fetch(`/api/purchase/${purchaseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "completed" }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to complete payment");
+      }
+
+      const { data } = await response.json();
+      console.log("✅ Payment completed:", data);
+
+      // Update the purchase in the list
+      const updated = purchases.map((p) =>
+        p._id === purchaseId ? { ...p, paymentStatus: "completed" as const } : p
+      );
+      setPurchases(updated);
+
+      // Refresh data to get updated redeem code
+      await fetchData();
+    } catch (error) {
+      console.error("❌ Failed to complete payment:", error);
+      alert("Failed to complete payment. Please try again.");
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [purchaseId]: false }));
+    }
+  };
+
+  const handleCancelPurchase = async (purchaseId: string | undefined) => {
+    if (!purchaseId) return;
+
+    if (
+      !confirm(
+        "Are you sure you want to cancel this purchase? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setActionLoading((prev) => ({ ...prev, [purchaseId]: true }));
+      console.log("❌ Cancelling purchase:", purchaseId);
+
+      const response = await fetch(`/api/purchase/${purchaseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "cancelled" }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to cancel purchase");
+      }
+
+      const { data } = await response.json();
+      console.log("✅ Purchase cancelled:", data);
+
+      // Update the purchase in the list
+      const updated = purchases.map((p) =>
+        p._id === purchaseId ? { ...p, paymentStatus: "cancelled" as const } : p
+      );
+      setPurchases(updated);
+
+      // Refresh data
+      await fetchData();
+    } catch (error) {
+      console.error("❌ Failed to cancel purchase:", error);
+      alert("Failed to cancel purchase. Please try again.");
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [purchaseId]: false }));
+    }
+  };
+
+  const handleCopyRedeemCode = (code: string, purchaseId: string) => {
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopiedId(purchaseId);
+        setTimeout(() => setCopiedId(null), 2000);
+      })
+      .catch(() => {
+        alert("Failed to copy redeem code");
+      });
   };
 
   const handleSaveUsername = async () => {
@@ -208,13 +336,14 @@ export default function UserProfilePage() {
         setUser(data);
         setIsEditing(false);
 
-        // ADD THIS LINE - Dispatch event to notify navbar
+        // Dispatch event to notify navbar
         window.dispatchEvent(new Event("profileUpdated"));
       }
     } catch (error) {
       console.error("Failed to update profile:", error);
     }
   };
+
   const handleCancelEdit = () => {
     if (user) {
       setEditedUsername(user.username);
@@ -241,11 +370,22 @@ export default function UserProfilePage() {
   return (
     <div className="pt-10 pb-10 px-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-primary mb-2">My Profile</h1>
-        <p className="text-secondary">
-          View your account information and purchase history
-        </p>
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-primary mb-2">My Profile</h1>
+          <p className="text-secondary">
+            View your account information and purchase history
+          </p>
+        </div>
+        <Button
+          onClick={fetchData}
+          variant="outline"
+          className="border-white/10 hover:bg-stone-800 gap-2"
+          disabled={loading}
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
 
       {/* User Information Card */}
@@ -292,9 +432,6 @@ export default function UserProfilePage() {
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <Mail className="w-4 h-4" />
                 Email
-                {isEditing && (
-                  <p className="text-xs text-secondary">(cannot be changed)</p>
-                )}
               </label>
               <p className="text-lg text-primary font-medium">{user.email}</p>
             </div>
@@ -373,7 +510,7 @@ export default function UserProfilePage() {
               <ShoppingCart className="w-5 h-5 text-blue-400" />
             </div>
           </div>
-          <p className="text-secondary text-sm">Items purchased</p>
+          <p className="text-secondary text-sm">Completed orders</p>
         </div>
 
         <div className="bg-stone-900/50 border border-white/10 rounded-lg p-6 hover:border-white/20 transition">
@@ -415,23 +552,27 @@ export default function UserProfilePage() {
             Transaction History
           </h2>
           <p className="text-secondary text-sm mt-1">
-            Your purchase history with ratings
+            Your complete purchase history ({purchases.length} total)
           </p>
         </div>
 
         {loading ? (
           <div className="p-8 text-center text-secondary">Loading...</div>
         ) : purchases.length === 0 ? (
-          <div className="p-8 text-center text-secondary">No purchases yet</div>
+          <div className="p-8 text-center text-secondary">
+            No purchases yet. Visit the products page to make your first
+            purchase!
+          </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="border-white/10 hover:bg-transparent">
                 <TableHead className="text-primary">Product</TableHead>
+                <TableHead className="text-primary">Status</TableHead>
                 <TableHead className="text-primary">Redeem Code</TableHead>
                 <TableHead className="text-primary">Amount</TableHead>
                 <TableHead className="text-primary">Date</TableHead>
-                <TableHead className="text-primary">Rating</TableHead>
+                <TableHead className="text-primary">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -439,6 +580,7 @@ export default function UserProfilePage() {
                 const purchaseId = purchase._id ?? "";
                 const createdDate = toDate(purchase.createdAt);
                 const redeemCode = ensureString(purchase.redeemCode);
+                const isActionLoading = actionLoading[purchaseId] || false;
 
                 return (
                   <TableRow
@@ -448,8 +590,32 @@ export default function UserProfilePage() {
                     <TableCell className="font-medium text-primary">
                       {purchase.productName}
                     </TableCell>
+
                     <TableCell className="text-secondary text-sm font-mono">
-                      {redeemCode}
+                      {purchase.paymentStatus === "completed" ? (
+                        <button
+                          onClick={() =>
+                            handleCopyRedeemCode(redeemCode, purchaseId)
+                          }
+                          className="flex items-center gap-2 pl-1 pr-3 py-1 rounded hover:text-stone-100 transition cursor-pointer text-xs"
+                          title="Click to copy redeem code"
+                        >
+                          <span>{redeemCode}</span>
+                          {copiedId === purchaseId ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      ) : purchase.paymentStatus === "pending" ? (
+                        "⏳ Awaiting Payment"
+                      ) : purchase.paymentStatus === "cancelled" ? (
+                        "❌ Cancelled"
+                      ) : purchase.paymentStatus === "failed" ? (
+                        "❌ Payment Failed"
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-primary">
                       Rp {purchase.totalPaid.toLocaleString("id-ID")}
@@ -462,58 +628,106 @@ export default function UserProfilePage() {
                       })}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        {ratingStates[purchaseId] ? (
-                          <div className="flex items-center gap-1">
-                            <div className="flex gap-0.5">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() =>
-                                    handleRatingChange(purchaseId, i + 1)
-                                  }
-                                  className="focus:outline-none transition"
-                                >
-                                  <Star
-                                    className={`w-4 h-4 ${
-                                      i < (ratingStates[purchaseId] || 0)
-                                        ? "text-yellow-400 fill-yellow-400"
-                                        : "text-gray-500"
-                                    }`}
-                                  />
-                                </button>
-                              ))}
+                      <Badge
+                        className={`${
+                          purchase.paymentStatus === "completed"
+                            ? "bg-green-500/20 text-green-300 border-green-500/30"
+                            : purchase.paymentStatus === "pending"
+                            ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
+                            : purchase.paymentStatus === "cancelled"
+                            ? "bg-gray-500/20 text-gray-300 border-gray-500/30"
+                            : purchase.paymentStatus === "failed"
+                            ? "bg-red-500/20 text-red-300 border-red-500/30"
+                            : "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                        }`}
+                      >
+                        {purchase.paymentStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {purchase.paymentStatus === "pending" ? (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            onClick={() => handleCompletePayment(purchaseId)}
+                            disabled={isActionLoading}
+                            className="h-8 px-3 text-xs bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30 gap-1"
+                          >
+                            {isActionLoading ? (
+                              <Loader className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <CreditCard className="w-3 h-3" />
+                            )}
+                            Pay
+                          </Button>
+                          <Button
+                            onClick={() => handleCancelPurchase(purchaseId)}
+                            disabled={isActionLoading}
+                            className="h-8 px-3 text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 gap-1"
+                          >
+                            {isActionLoading ? (
+                              <Loader className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : purchase.paymentStatus === "completed" ? (
+                        <div className="flex items-center gap-2">
+                          {ratingStates[purchaseId] ? (
+                            <div className="flex items-center gap-1">
+                              <div className="flex gap-0.5">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() =>
+                                      handleRatingChange(purchaseId, i + 1)
+                                    }
+                                    className="focus:outline-none transition"
+                                  >
+                                    <Star
+                                      className={`w-4 h-4 ${
+                                        i < (ratingStates[purchaseId] || 0)
+                                          ? "text-yellow-400 fill-yellow-400"
+                                          : "text-gray-500"
+                                      }`}
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveRating(purchaseId)}
+                                className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                Remove
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveRating(purchaseId)}
-                              className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <div className="flex gap-0.5">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() =>
-                                    handleRatingChange(purchaseId, i + 1)
-                                  }
-                                  className="focus:outline-none transition hover:scale-110"
-                                >
-                                  <Star className="w-4 h-4 text-gray-500 hover:text-yellow-400" />
-                                </button>
-                              ))}
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <div className="flex gap-0.5">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() =>
+                                      handleRatingChange(purchaseId, i + 1)
+                                    }
+                                    className="focus:outline-none transition hover:scale-110"
+                                  >
+                                    <Star className="w-4 h-4 text-gray-500 hover:text-yellow-400" />
+                                  </button>
+                                ))}
+                              </div>
+                              <span className="text-secondary text-xs">
+                                Rate
+                              </span>
                             </div>
-                            <span className="text-secondary text-xs">
-                              Rate this
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-secondary text-xs">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -524,7 +738,7 @@ export default function UserProfilePage() {
       </div>
 
       {/* Pagination */}
-      {paginatedData.length > 0 && (
+      {paginatedData.length > 0 && totalPages > 1 && (
         <div className="mt-8 flex justify-center">
           <Pagination>
             <PaginationContent>

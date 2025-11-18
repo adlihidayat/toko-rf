@@ -7,54 +7,13 @@ import { useRouter } from "next/navigation";
 import { Menu, X, LogOut, User } from "lucide-react";
 import { useUserRole } from "@/app/providers";
 
-interface UserProfile {
-  _id: string;
-  username: string;
-  email: string;
-  role: string;
-}
-
 export function AdminNavbar() {
   const router = useRouter();
-  const { setRole } = useUserRole();
+  const { user, setRole, setUser } = useUserRole(); // ⭐ Get user from context
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Fetch user profile
-  const fetchUserProfile = async () => {
-    try {
-      setIsLoadingProfile(true);
-      const response = await fetch("/api/auth/me");
-      if (response.ok) {
-        const data = await response.json();
-        setUserProfile(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch user profile:", error);
-    } finally {
-      setIsLoadingProfile(false);
-    }
-  };
-
-  // Initial fetch
-  useEffect(() => {
-    fetchUserProfile();
-  }, []);
-
-  // Listen for profile updates
-  useEffect(() => {
-    const handleProfileUpdate = () => {
-      fetchUserProfile();
-    };
-
-    window.addEventListener("profileUpdated", handleProfileUpdate);
-    return () =>
-      window.removeEventListener("profileUpdated", handleProfileUpdate);
-  }, []);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -71,6 +30,7 @@ export function AdminNavbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // ⭐ NEW: Proper logout handler
   const handleLogout = async () => {
     setIsLoggingOut(true);
 
@@ -78,13 +38,21 @@ export function AdminNavbar() {
       const response = await fetch("/api/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // ⭐ Include cookies
       });
 
       if (response.ok) {
-        setRole(null); // Update context
+        // ⭐ Clear context state immediately
+        setRole(null);
+        setUser(null);
+
+        // Close menus
         setIsProfileOpen(false);
         setIsMobileMenuOpen(false);
+
+        // ⭐ Redirect and refresh
         router.push("/");
+        router.refresh();
       } else {
         console.error("Logout failed");
       }
@@ -99,8 +67,9 @@ export function AdminNavbar() {
     setIsMobileMenuOpen(false);
   };
 
-  const displayName = userProfile?.username || "admin1";
-  const displayEmail = userProfile?.email || "admin@gmail.com";
+  // ⭐ Use user from context (always up-to-date)
+  const displayName = user?.username || "Admin";
+  const displayEmail = user?.email || "admin@gmail.com";
 
   return (
     <nav className="fixed top-0 w-full border-b border-white/10 bg-black z-50">
@@ -140,11 +109,8 @@ export function AdminNavbar() {
             className="flex items-center gap-3 hover:opacity-80 transition cursor-pointer"
           >
             <span className="text-[#ededed] text-sm font-medium">
-              {isLoadingProfile ? "Loading..." : displayName}
+              {displayName}
             </span>
-            {/* <div className="rounded-full h-6 w-6 bg-primary flex items-center justify-center">
-              <User className="w-3 h-3 text-background" />
-            </div> */}
             <img
               src="https://avatars.githubusercontent.com/u/124599?v=4"
               alt=""
@@ -221,18 +187,18 @@ export function AdminNavbar() {
               onClick={closeMobileMenu}
               className="text-[#ededed] hover:text-[#52a8ff] transition font-medium text-lg border-b border-white/10 pb-4"
             >
-              User management
+              User Management
             </Link>
 
             {/* User Info Section */}
-            <div className="b border-white/10 pt-4 mt-4">
+            <div className="border-t border-white/10 pt-4 mt-4">
               <p className="text-sm font-semibold text-[#ededed]">
                 {displayName}
               </p>
               <p className="text-xs text-[#a1a1a1] mt-1">{displayEmail}</p>
             </div>
 
-            {/* Show Profile Button */}
+            {/* View Profile Button */}
             <button
               onClick={() => {
                 router.push("/admin/profile");
@@ -241,7 +207,7 @@ export function AdminNavbar() {
               className="text-[#ededed] hover:text-[#52a8ff] transition font-medium text-lg border-b border-white/10 pb-4 text-left flex items-center gap-2"
             >
               <User className="w-4 h-4" />
-              Show Profile
+              View Profile
             </button>
 
             {/* Logout Button */}

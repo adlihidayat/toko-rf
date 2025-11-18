@@ -7,54 +7,13 @@ import { useRouter } from "next/navigation";
 import { Menu, X, LogOut, User } from "lucide-react";
 import { useUserRole } from "@/app/providers";
 
-interface UserProfile {
-  _id: string;
-  username: string;
-  email: string;
-  role: string;
-}
-
 export function UserNavbar() {
   const router = useRouter();
-  const { setRole } = useUserRole();
+  const { user, setRole, setUser, refreshAuth } = useUserRole(); // ⭐ Get user from context
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Fetch user profile
-  const fetchUserProfile = async () => {
-    try {
-      setIsLoadingProfile(true);
-      const response = await fetch("/api/auth/me");
-      if (response.ok) {
-        const data = await response.json();
-        setUserProfile(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch user profile:", error);
-    } finally {
-      setIsLoadingProfile(false);
-    }
-  };
-
-  // Initial fetch
-  useEffect(() => {
-    fetchUserProfile();
-  }, []);
-
-  // Listen for profile updates
-  useEffect(() => {
-    const handleProfileUpdate = () => {
-      fetchUserProfile();
-    };
-
-    window.addEventListener("profileUpdated", handleProfileUpdate);
-    return () =>
-      window.removeEventListener("profileUpdated", handleProfileUpdate);
-  }, []);
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -71,6 +30,7 @@ export function UserNavbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // ⭐ NEW: Proper logout handler
   const handleLogout = async () => {
     setIsLoggingOut(true);
 
@@ -78,13 +38,21 @@ export function UserNavbar() {
       const response = await fetch("/api/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // ⭐ Include cookies
       });
 
       if (response.ok) {
-        setRole(null); // Update context
+        // ⭐ Clear context state immediately
+        setRole(null);
+        setUser(null);
+
+        // Close menus
         setIsProfileOpen(false);
         setIsMobileMenuOpen(false);
+
+        // ⭐ Redirect and refresh
         router.push("/");
+        router.refresh();
       } else {
         console.error("Logout failed");
       }
@@ -99,8 +67,9 @@ export function UserNavbar() {
     setIsMobileMenuOpen(false);
   };
 
-  const displayName = userProfile?.username || "user";
-  const displayEmail = userProfile?.email || "user@gmail.com";
+  // ⭐ Use user from context (always up-to-date)
+  const displayName = user?.username || "User";
+  const displayEmail = user?.email || "user@gmail.com";
 
   const scrollToFooter = () => {
     const footer = document.getElementById("footer");
@@ -145,7 +114,7 @@ export function UserNavbar() {
               href="https://www.youtube.com/"
               className="text-[#a1a1a1] hover:text-[#ededed] transition"
             >
-              How to Reedem Code
+              How to Redeem Code
             </Link>
           </div>
         </div>
@@ -157,7 +126,7 @@ export function UserNavbar() {
             className="flex items-center gap-3 hover:opacity-80 transition cursor-pointer"
           >
             <span className="text-[#ededed] text-sm font-medium">
-              {isLoadingProfile ? "Loading..." : displayName}
+              {displayName}
             </span>
             <img
               src="https://avatars.githubusercontent.com/u/124599?v=4"
@@ -257,7 +226,7 @@ export function UserNavbar() {
               <p className="text-xs text-[#a1a1a1] mt-1">{displayEmail}</p>
             </div>
 
-            {/* Show Profile Button */}
+            {/* View Profile Button */}
             <button
               onClick={() => {
                 router.push("/profile");

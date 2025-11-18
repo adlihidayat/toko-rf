@@ -1,103 +1,70 @@
-// middleware.ts (at root of your project, same level as app/)
+// middleware.ts (SIMPLIFIED & FIXED)
 import { NextRequest, NextResponse } from "next/server";
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  // Check for user-id instead of auth-token since that's what your login sets
-  const userId = request.cookies.get("user-id")?.value;
+
+  // Get auth token (this is our single source of truth in middleware)
+  const authToken = request.cookies.get("auth-token")?.value;
   const userRole = request.cookies.get("user-role")?.value;
-  const authToken = userId; // Use userId as auth check
 
-  // Log for debugging
-  console.log("🔍 Middleware Check:", {
-    pathname,
-    hasAuthToken: !!authToken,
-    userRole,
-    timestamp: new Date().toISOString(),
-  });
-
-  // Define route types
-  const adminRoutes = ["/admin"];
-  const protectedRoutes = ["/history", "/profile"]; // Removed /products-management since it doesn't exist
+  // Define route patterns
   const authRoutes = ["/login", "/signup"];
-  const publicRoutes = ["/", "/products", "/checkout"]; // Explicitly allow checkout
+  const adminRoutes = ["/admin"];
+  const protectedRoutes = ["/profile", "/history"];
 
-  // Check route types (order matters!)
-  const isAdminRoute = adminRoutes.some((route) => pathname.startsWith(route));
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+  // Check if current path matches any pattern
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
-  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + "/"));
-
-  console.log("📍 Route Type:", {
-    isPublicRoute,
-    isProtectedRoute,
-    isAdminRoute,
-    isAuthRoute
-  });
+  const isAdminRoute = adminRoutes.some((route) => pathname.startsWith(route));
+  const isProtectedRoute = protectedRoutes.some((route) =>
+    pathname.startsWith(route)
+  );
 
   // ============================================
-  // SCENARIO 1: No auth token (not logged in)
+  // 1. If NOT logged in
   // ============================================
   if (!authToken) {
-    console.log("❌ No Auth Token");
-
-    // Allow public routes and auth routes
-    if (isPublicRoute || isAuthRoute) {
-      console.log("✅ Public/Auth route - allowing access");
-      return NextResponse.next();
+    // Block admin and protected routes
+    if (isAdminRoute || isProtectedRoute) {
+      console.log(`🚫 Blocking ${pathname} - no auth token`);
+      return NextResponse.redirect(new URL("/login", request.url));
     }
 
-    // Redirect to login for protected/admin routes
-    console.log("🚫 Protected route without auth - redirecting to login");
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Allow everything else (public routes, auth routes)
+    return NextResponse.next();
   }
 
   // ============================================
-  // SCENARIO 2: User is logged in
+  // 2. If logged in
   // ============================================
-  console.log("✅ Auth Token Present");
 
-  // Redirect from login/signup to appropriate page
+  // Redirect away from login/signup
   if (isAuthRoute) {
-    const redirectUrl = userRole === "admin" ? "/admin/products-management" : "/profile";
-    console.log(`📤 Logged in user on auth page - redirecting to ${redirectUrl}`);
+    const redirectUrl =
+      userRole === "admin" ? "/admin/products-management" : "/";
+    console.log(`📤 Redirecting from ${pathname} to ${redirectUrl}`);
     return NextResponse.redirect(new URL(redirectUrl, request.url));
   }
 
-  // Admin routes - only admins allowed
-  if (isAdminRoute) {
-    if (userRole !== "admin") {
-      console.log("❌ Non-admin user accessing admin route - redirecting to /profile");
-      return NextResponse.redirect(new URL("/profile", request.url));
-    }
-    console.log("✅ Admin user - allowing access to admin route");
-    return NextResponse.next();
+  // Check admin routes
+  if (isAdminRoute && userRole !== "admin") {
+    console.log(`🚫 Non-admin blocked from ${pathname}`);
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // Protected routes - users allowed, but redirect admins to admin products-management
-  if (isProtectedRoute) {
-    if (userRole === "admin") {
-      console.log("📤 Admin user on protected user route - redirecting to /admin/products-management");
-      return NextResponse.redirect(new URL("/admin/products-management", request.url));
-    }
-    console.log("✅ User allowed on protected route");
-    return NextResponse.next();
-  }
-
-  // Public routes - everyone allowed
-  console.log("✅ Public route - allowing access");
+  // Allow everything else
   return NextResponse.next();
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
+     * Match all paths except:
+     * - api routes
      * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
+     * - _next/image (image optimization)
+     * - favicon.ico, sitemap.xml, robots.txt
      */
-    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };

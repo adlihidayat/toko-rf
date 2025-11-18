@@ -8,38 +8,19 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-    // Clear all auth cookies
-    response.cookies.set("auth-token", "", { maxAge: 0 });
-    response.cookies.set("user-id", "", { maxAge: 0 });
-    response.cookies.set("user-role", "", { maxAge: 0 });
-    response.cookies.set("user-username", "", { maxAge: 0 });
-    response.cookies.set("user-email", "", { maxAge: 0 });
-    response.cookies.set("user-phone", "", { maxAge: 0 });
+    // Clear all auth cookies with proper settings
+    const cookieOptions = {
+      maxAge: 0,
+      path: "/",
+      httpOnly: false,
+    };
 
-    return response;
-  } catch (error) {
-    console.error("Logout error:", error);
-    return NextResponse.json(
-      { success: false, error: "Logout failed" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    const response = NextResponse.json(
-      { success: true, message: "Logout successful" },
-      { status: 200 }
-    );
-
-    // Clear all auth cookies
-    response.cookies.set("auth-token", "", { maxAge: 0 });
-    response.cookies.set("user-id", "", { maxAge: 0 });
-    response.cookies.set("user-role", "", { maxAge: 0 });
-    response.cookies.set("user-username", "", { maxAge: 0 });
-    response.cookies.set("user-email", "", { maxAge: 0 });
-    response.cookies.set("user-phone", "", { maxAge: 0 });
+    response.cookies.set("auth-token", "", { ...cookieOptions, httpOnly: true });
+    response.cookies.set("user-id", "", cookieOptions);
+    response.cookies.set("user-role", "", cookieOptions);
+    response.cookies.set("user-username", "", cookieOptions);
+    response.cookies.set("user-email", "", cookieOptions);
+    response.cookies.set("user-phone", "", cookieOptions);
 
     return response;
   } catch (error) {

@@ -11,7 +11,7 @@ import { useUserRole } from "@/app/providers";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setRole } = useUserRole();
+  const { refreshAuth } = useUserRole();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -26,6 +26,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
@@ -36,15 +37,18 @@ export default function LoginPage() {
         return;
       }
 
-      // Update the role context immediately
-      setRole(data.user.role === "admin" ? "admin" : "user");
+      // IMPORTANT: Refresh auth state before redirecting
+      await refreshAuth();
 
-      // Redirect to appropriate dashboard
-      if (data.user.role === "admin") {
-        router.push("/admin/products-management");
-      } else {
-        router.push("/");
-      }
+      // Small delay to ensure state is updated
+      setTimeout(() => {
+        if (data.user.role === "admin") {
+          router.push("/admin/products-management");
+        } else {
+          router.push("/");
+        }
+        router.refresh(); // Force a refresh
+      }, 100);
     } catch (err) {
       setError("Login failed. Please try again.");
       console.error(err);
@@ -54,7 +58,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className=" bg-dark flex items-center justify-center px-8 w-full">
+    <div className="bg-dark flex items-center justify-center px-8 w-full">
       <div className="w-full max-w-md h-fit">
         {/* Header */}
         <div className="text-center mb-8">
@@ -123,25 +127,6 @@ export default function LoginPage() {
               disabled={isLoading}
               className="bg-stone-900/30 border-white/10 text-primary placeholder:text-secondary/50"
             />
-          </div>
-
-          {/* Remember Me & Forgot Password */}
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded bg-stone-900/30 border-white/10"
-              />
-              <span className="text-secondary hover:text-primary transition">
-                Remember me
-              </span>
-            </label>
-            <Link
-              href="#"
-              className="text-secondary hover:text-primary transition"
-            >
-              Forgot password?
-            </Link>
           </div>
 
           {/* Submit Button */}
