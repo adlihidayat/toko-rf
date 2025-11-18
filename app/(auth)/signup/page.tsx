@@ -78,7 +78,7 @@ export default function SignupPage() {
 
       // Navigate with delay to ensure state update
       setTimeout(() => {
-        router.push("/");
+        router.push("/product");
         router.refresh();
       }, 100);
     } catch (err) {

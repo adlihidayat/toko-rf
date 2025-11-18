@@ -8,9 +8,65 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Search, ChevronLeft } from "lucide-react";
 import { ProductDocument, CategoryWithStockCount } from "@/lib/types";
+import { useCompressedImage } from "@/lib/hooks/useCompressedImage";
 
 interface ProductWithStock extends ProductDocument {
   availableStockCount: number;
+}
+
+// Category card component with image compression
+function CategoryCardWithCompression({
+  category,
+  productCount,
+  onClick,
+}: {
+  category: CategoryWithStockCount;
+  productCount: number;
+  onClick: () => void;
+}) {
+  const { src, loading } = useCompressedImage(category.icon, {
+    quality: 0.75,
+    maxWidth: 400,
+    maxHeight: 400,
+  });
+
+  return (
+    <div
+      onClick={onClick}
+      className="cursor-pointer group bg-stone-900/50 border border-white/10 rounded-lg p-8 hover:border-[#00BCA8]/50 transition hover:bg-stone-900/70 hover:shadow-lg hover:shadow-[#00BCA8]/10"
+    >
+      <div className="mb-6 overflow-hidden rounded-lg h-48 bg-stone-800/50 flex items-center justify-center relative">
+        <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-stone-900/40 z-10"></div>
+        {loading ? (
+          <div className="w-full h-full flex items-center justify-center bg-stone-700/30 animate-pulse">
+            <span className="text-xs text-secondary">Loading...</span>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt={category.name}
+            className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+            onError={(e) => {
+              e.currentTarget.src =
+                "https://via.placeholder.com/400?text=No+Image";
+            }}
+          />
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xl font-bold text-primary mb-3">{category.name}</h3>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-secondary group-hover:text-[#00BCA8] transition">
+            Explore products →
+          </p>
+          <Badge className="bg-background text-secondary border-secondary pb-1">
+            {productCount} products
+          </Badge>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProductsPage() {
@@ -24,7 +80,11 @@ export default function ProductsPage() {
 
   // Get product count for a category
   const getProductCountInCategory = (categoryId: string) => {
-    return products.filter((p) => p.categoryId === categoryId).length;
+    return products.filter((p) => {
+      const pCategoryId = p.categoryId?.toString() || "";
+      const catId = categoryId?.toString() || "";
+      return pCategoryId === catId;
+    }).length;
   };
 
   // Check auth status on mount
@@ -39,11 +99,7 @@ export default function ProductsPage() {
       );
       const hasAuth = !!(userId && userRole);
 
-      console.log("🔍 Auth Check:");
-      console.log("  - User ID found:", !!userId);
-      console.log("  - User role found:", !!userRole);
-      console.log("  - Is logged in:", hasAuth);
-
+      console.log("🔍 Auth Check:", { userId: !!userId, userRole: !!userRole });
       setIsLoggedIn(hasAuth);
     };
 
@@ -55,6 +111,7 @@ export default function ProductsPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
+
         const [categoriesRes, productsRes, stocksRes] = await Promise.all([
           fetch("/api/categories"),
           fetch("/api/products"),
@@ -88,6 +145,7 @@ export default function ProductsPage() {
           const productsWithStock = productsData.data.map(
             (product: ProductDocument) => ({
               ...product,
+              categoryId: product.categoryId?.toString() || "",
               availableStockCount:
                 availableStocksByProduct[product._id ?? ""] || 0,
             })
@@ -97,7 +155,7 @@ export default function ProductsPage() {
           setProducts(productsWithStock);
         }
       } catch (error) {
-        console.error("Failed to fetch data:", error);
+        console.error("❌ Failed to fetch data:", error);
       } finally {
         setLoading(false);
       }
@@ -106,14 +164,18 @@ export default function ProductsPage() {
     fetchData();
   }, []);
 
-  // Filter based on view mode (category or product)
+  // Filter based on view mode
   const filteredCategories = categories.filter((cat) =>
     cat.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredProducts = selectedCategory
     ? products
-        .filter((p) => p.categoryId === (selectedCategory._id ?? ""))
+        .filter((p) => {
+          const pCategoryId = p.categoryId?.toString() || "";
+          const selectedCategoryId = selectedCategory._id?.toString() || "";
+          return pCategoryId === selectedCategoryId;
+        })
         .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
     : [];
 
@@ -225,39 +287,12 @@ export default function ProductsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredCategories.length > 0 ? (
                 filteredCategories.map((category) => (
-                  <div
+                  <CategoryCardWithCompression
                     key={category._id}
+                    category={category}
+                    productCount={getProductCountInCategory(category._id ?? "")}
                     onClick={() => handleSelectCategory(category)}
-                    className="cursor-pointer group bg-stone-900/50 border border-white/10 rounded-lg p-8 hover:border-[#00BCA8]/50 transition hover:bg-stone-900/70 hover:shadow-lg hover:shadow-[#00BCA8]/10"
-                  >
-                    <div className="mb-6 overflow-hidden rounded-lg h-48 bg-stone-800/50 flex items-center justify-center relative">
-                      <div className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-stone-900/40 z-10"></div>
-                      <img
-                        src={category.icon}
-                        alt={category.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition duration-500"
-                        onError={(e) => {
-                          e.currentTarget.src =
-                            "https://via.placeholder.com/400?text=No+Image";
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <h3 className="text-xl font-bold text-primary mb-3">
-                        {category.name}
-                      </h3>
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-secondary group-hover:text-[#00BCA8] transition">
-                          Explore products →
-                        </p>
-                        <Badge className="bg-background text-secondary border-secondary pb-1">
-                          {getProductCountInCategory(category._id ?? "")}{" "}
-                          products
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
+                  />
                 ))
               ) : (
                 <div className="col-span-full text-center py-20">
@@ -304,7 +339,7 @@ export default function ProductsPage() {
                     No products found in this category
                   </p>
                   <p className="text-sm text-secondary/60">
-                    Try searching or going back
+                    The category might not have products yet, or try searching
                   </p>
                 </div>
               )}

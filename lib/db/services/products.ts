@@ -9,12 +9,18 @@ export class ProductService {
     await connectDB();
     const products = await Product.find().lean();
 
+    console.log(`📦 Fetched ${products.length} products`);
+
     // Convert _id and categoryId to strings for consistency
-    return products.map(product => ({
-      ...product,
-      _id: product._id?.toString(),
-      categoryId: product.categoryId.toString(),
-    }));
+    return products.map(product => {
+      const converted = {
+        ...product,
+        _id: product._id?.toString(),
+        categoryId: product.categoryId?.toString() || product.categoryId,
+      };
+      console.log(`  Product: ${converted.name} -> categoryId: ${converted.categoryId}`);
+      return converted;
+    });
   }
 
   static async getFeaturedProducts() {
@@ -48,7 +54,7 @@ export class ProductService {
         return {
           ...product,
           _id: productId,
-          categoryId: product.categoryId.toString(),
+          categoryId: product.categoryId?.toString() || product.categoryId,
           totalStock,
           availableStock,
         };
@@ -60,7 +66,14 @@ export class ProductService {
 
   static async getProductById(id: string): Promise<ProductDocument | null> {
     await connectDB();
-    return await Product.findById(id).lean();
+    const product = await Product.findById(id).lean();
+    if (!product) return null;
+
+    return {
+      ...product,
+      _id: product._id?.toString(),
+      categoryId: product.categoryId?.toString() || product.categoryId,
+    };
   }
 
   static async getProductWithStock(id: string) {
@@ -76,7 +89,8 @@ export class ProductService {
 
     return {
       ...product,
-      _id: product._id.toString(),
+      _id: product._id?.toString(),
+      categoryId: product.categoryId?.toString() || product.categoryId,
       totalStock,
       availableStock,
     };
@@ -84,8 +98,16 @@ export class ProductService {
 
   static async createProduct(productData: CreateProductInput): Promise<ProductDocument> {
     await connectDB();
+
+    console.log('🆕 Creating product with categoryId:', productData.categoryId);
+
     const product = await Product.create(productData);
-    return product.toObject();
+
+    return {
+      ...product.toObject(),
+      _id: product._id?.toString(),
+      categoryId: product.categoryId?.toString() || product.categoryId,
+    };
   }
 
   static async updateProduct(
@@ -93,7 +115,15 @@ export class ProductService {
     updates: UpdateProductInput
   ): Promise<ProductDocument | null> {
     await connectDB();
-    return await Product.findByIdAndUpdate(id, updates, { new: true }).lean();
+    const product = await Product.findByIdAndUpdate(id, updates, { new: true }).lean();
+
+    if (!product) return null;
+
+    return {
+      ...product,
+      _id: product._id?.toString(),
+      categoryId: product.categoryId?.toString() || product.categoryId,
+    };
   }
 
   static async deleteProduct(id: string): Promise<boolean> {
@@ -107,6 +137,17 @@ export class ProductService {
 
   static async getProductsByCategory(categoryId: string): Promise<ProductDocument[]> {
     await connectDB();
-    return await Product.find({ categoryId }).lean();
+
+    console.log(`🔍 Getting products for category: ${categoryId}`);
+
+    const products = await Product.find({ categoryId }).lean();
+
+    console.log(`   Found ${products.length} products`);
+
+    return products.map(product => ({
+      ...product,
+      _id: product._id?.toString(),
+      categoryId: product.categoryId?.toString() || product.categoryId,
+    }));
   }
 }
