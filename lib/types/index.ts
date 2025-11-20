@@ -1,4 +1,4 @@
-// lib/types/index.ts
+// lib/types/index.ts - COMPLETE WITH ALL EXPORTS
 
 // ============ USER TYPES ============
 export interface UserDocument {
@@ -92,7 +92,7 @@ export interface StockDocument {
   productId: string;
   redeemCode: string;
   addedDate?: Date;
-  purchaseId?: string | null;
+  orderGroupId?: string | null; // Links to OrderGroup (replaces purchaseId)
   status: "available" | "pending" | "paid";
   reservedAt?: Date | null;
   paidAt?: Date | null;
@@ -104,7 +104,7 @@ export interface CreateStockInput {
   productId: string;
   redeemCode: string;
   status?: "available" | "pending" | "paid";
-  purchaseId?: string | null;
+  orderGroupId?: string | null;
   reservedAt?: Date | null;
   paidAt?: Date | null;
 }
@@ -114,7 +114,34 @@ export interface StockWithProductInfo extends StockDocument {
   productPrice: number;
 }
 
-// ============ PURCHASE TYPES ============
+// ============ ORDER GROUP TYPES (NEW) ============
+export interface OrderGroupDocument {
+  _id?: string;
+  userId: string;
+  productId: string;
+  stockIds: string[];
+  quantity: number;
+  totalPaid: number;
+  paymentStatus: "pending" | "completed" | "failed" | "cancelled";
+  midtransOrderId: string;
+  midtransTransactionId?: string;
+  rating?: number | null;
+  reservedAt?: Date;
+  paidAt?: Date;
+  expiresAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface OrderGroupWithDetails extends OrderGroupDocument {
+  productName: string;
+  productPrice: number;
+  userName: string;
+  stocks: StockDocument[];
+  redeemCodes?: string[];
+}
+
+// ============ PURCHASE TYPES (DEPRECATED - kept for backwards compatibility) ============
 export interface PurchaseDocument {
   _id?: string;
   userId: string;

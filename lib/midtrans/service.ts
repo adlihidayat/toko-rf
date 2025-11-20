@@ -1,4 +1,4 @@
-// lib/midtrans/service.ts
+// lib/midtrans/service.ts - COMPLETE UPDATED VERSION
 import { midtransConfig, createAuthString, MIDTRANS_MODE } from './config';
 
 interface TransactionDetails {
@@ -109,9 +109,13 @@ export class MidtransService {
   }
 
   /**
-   * Verify transaction status from Midtrans notification
+   * Get transaction status from Midtrans
+   * Used to verify payment status from gateway
+   * 
+   * @param orderId The order ID to check
+   * @returns Transaction details from Midtrans including status, transaction ID, etc.
    */
-  static async verifyTransactionStatus(orderId: string): Promise<any> {
+  static async getTransactionStatus(orderId: string): Promise<any> {
     try {
       const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
@@ -126,10 +130,10 @@ export class MidtransService {
         ? `https://api.sandbox.midtrans.com/v2/${orderId}/status`
         : `https://api.midtrans.com/v2/${orderId}/status`;
 
-      console.log('🔍 Verifying transaction status:', {
+      console.log('🔍 Querying Midtrans transaction status:', {
         orderId,
         mode: MIDTRANS_MODE,
-        url: statusUrl
+        url: statusUrl,
       });
 
       const response = await fetch(statusUrl, {
@@ -142,18 +146,50 @@ export class MidtransService {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to verify transaction status');
+        const errorData = await response.text();
+        console.error('❌ Midtrans status query failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        });
+        throw new Error(
+          `Failed to query transaction status: ${response.status} ${response.statusText}`
+        );
       }
 
-      return await response.json();
+      const data = await response.json();
+
+      console.log('📊 Midtrans transaction status response:', {
+        order_id: data.order_id,
+        transaction_id: data.transaction_id,
+        status_code: data.status_code,
+        transaction_status: data.transaction_status,
+        fraud_status: data.fraud_status,
+        settlement_time: data.settlement_time,
+        gross_amount: data.gross_amount,
+      });
+
+      return data;
     } catch (error) {
-      console.error('Transaction status verification error:', error);
+      console.error('❌ Transaction status verification error:', error);
       throw error;
     }
   }
 
   /**
+   * Verify transaction status from Midtrans notification
+   * @deprecated Use getTransactionStatus instead
+   */
+  static async verifyTransactionStatus(orderId: string): Promise<any> {
+    console.warn('⚠️ verifyTransactionStatus is deprecated. Use getTransactionStatus instead.');
+    return this.getTransactionStatus(orderId);
+  }
+
+  /**
    * Parse Midtrans notification to determine payment status
+   * 
+   * @param notification Midtrans webhook notification object
+   * @returns Parsed status information
    */
   static parseNotificationStatus(notification: any): {
     status: 'pending' | 'completed' | 'failed' | 'cancelled';
@@ -167,25 +203,41 @@ export class MidtransService {
 
     let status: 'pending' | 'completed' | 'failed' | 'cancelled' = 'pending';
 
-    if (transactionStatus === 'capture') {
-      status = fraudStatus === 'accept' ? 'completed' : 'pending';
-    } else if (transactionStatus === 'settlement') {
+    // Settlement is always success
+    if (transactionStatus === 'settlement') {
       status = 'completed';
-    } else if (
+      console.log('✅ Transaction settled - status: completed');
+    }
+    // Capture might be challenged
+    else if (transactionStatus === 'capture') {
+      status = fraudStatus === 'accept' ? 'completed' : 'pending';
+      if (fraudStatus === 'accept') {
+        console.log('✅ Transaction captured and accepted - status: completed');
+      } else if (fraudStatus === 'challenge') {
+        console.log('⚠️ Transaction captured but challenged - status: pending');
+      }
+    }
+    // Pending is still pending
+    else if (transactionStatus === 'pending') {
+      status = 'pending';
+      console.log('⏳ Transaction still pending - status: pending');
+    }
+    // Deny, cancel, expire are all failures
+    else if (
       transactionStatus === 'cancel' ||
       transactionStatus === 'deny' ||
       transactionStatus === 'expire'
     ) {
       status = 'failed';
-    } else if (transactionStatus === 'pending') {
-      status = 'pending';
+      console.log(`❌ Transaction ${transactionStatus} - status: failed`);
     }
 
     console.log('📊 Parsed notification:', {
       status,
       transactionStatus,
       fraudStatus,
-      mode: MIDTRANS_MODE
+      orderId,
+      mode: MIDTRANS_MODE,
     });
 
     return {
@@ -194,5 +246,89 @@ export class MidtransService {
       transactionStatus,
       fraudStatus,
     };
+  }
+
+  /**
+   * Check if transaction is actually paid (safe to release redeem codes)
+   * 
+   * @param transactionStatus Status from Midtrans
+   * @param fraudStatus Fraud status from Midtrans
+   * @returns true if payment is confirmed and safe to use
+   */
+  static isTransactionSuccessful(
+    transactionStatus: string,
+    fraudStatus?: string
+  ): boolean {
+    // Settlement is always success
+    if (transactionStatus === 'settlement') {
+      console.log('✅ Transaction is successful (settlement)');
+      return true;
+    }
+
+    // Capture without challenge is success
+    if (transactionStatus === 'capture' && fraudStatus === 'accept') {
+      console.log('✅ Transaction is successful (capture accepted)');
+      return true;
+    }
+
+    console.log('❌ Transaction is not successful:', {
+      transactionStatus,
+      fraudStatus,
+    });
+    return false;
+  }
+
+  /**
+   * Get user-friendly status message
+   * 
+   * @param status Payment status
+   * @returns User-friendly message
+   */
+  static getStatusMessage(status: string): string {
+    const messages: Record<string, string> = {
+      completed: '✅ Payment successful! Your redeem codes are ready.',
+      pending: '⏳ Payment is still pending. Please complete the transaction.',
+      failed: '❌ Payment failed or was cancelled. Please try again.',
+      cancelled: '❌ Payment was cancelled. Please try again.',
+    };
+
+    return messages[status] || '❓ Unknown status. Please contact support.';
+  }
+
+  /**
+   * Get transaction details with full information
+   * 
+   * @param orderId The order ID
+   * @returns Transaction object with all details
+   */
+  static async getTransactionDetails(orderId: string): Promise<any> {
+    try {
+      console.log('📋 Fetching full transaction details for:', orderId);
+
+      const transactionData = await this.getTransactionStatus(orderId);
+      const parsedStatus = this.parseNotificationStatus(transactionData);
+      const isSuccessful = this.isTransactionSuccessful(
+        transactionData.transaction_status,
+        transactionData.fraud_status
+      );
+
+      return {
+        orderId: transactionData.order_id,
+        transactionId: transactionData.transaction_id,
+        status: parsedStatus.status,
+        isSuccessful,
+        transactionStatus: transactionData.transaction_status,
+        fraudStatus: transactionData.fraud_status,
+        amount: transactionData.gross_amount,
+        paymentType: transactionData.payment_type,
+        bank: transactionData.bank,
+        settlementTime: transactionData.settlement_time,
+        transactionTime: transactionData.transaction_time,
+        statusMessage: this.getStatusMessage(parsedStatus.status),
+      };
+    } catch (error) {
+      console.error('❌ Failed to get transaction details:', error);
+      throw error;
+    }
   }
 }

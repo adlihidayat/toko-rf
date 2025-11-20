@@ -37,22 +37,27 @@ import {
   Loader,
   Copy,
   Check,
-  XIcon,
-  HourglassIcon,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import { PurchaseWithDetails, UserDocument } from "@/lib/types";
-import { toDate, ensureString } from "@/lib/utils/date";
+import { OrderGroupWithDetails } from "@/lib/db/services/order-group";
+import { UserDocument } from "@/lib/types";
+import { toDate } from "@/lib/utils/date";
+
+interface OrderGroupWithExpanded extends OrderGroupWithDetails {
+  isExpanded?: boolean;
+}
 
 export default function UserProfilePage() {
   const [user, setUser] = useState<UserDocument | null>(null);
-  const [purchases, setPurchases] = useState<PurchaseWithDetails[]>([]);
+  const [orderGroups, setOrderGroups] = useState<OrderGroupWithExpanded[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedUsername, setEditedUsername] = useState("");
   const [editedPhoneNumber, setEditedPhoneNumber] = useState("");
   const [stats, setStats] = useState({
-    totalSpent: 0,
     totalPurchases: 0,
+    totalSpent: 0,
     avgRating: "0",
   });
   const [currentPage, setCurrentPage] = useState(1);
@@ -77,7 +82,7 @@ export default function UserProfilePage() {
     console.log("UserId from cookie:", userIdCookie);
   }, []);
 
-  // Fetch user data and purchases
+  // Fetch user data and order groups
   const fetchData = async () => {
     if (!userId) return;
 
@@ -85,19 +90,19 @@ export default function UserProfilePage() {
       setLoading(true);
       console.log("🔄 Fetching data for userId:", userId);
 
-      const [userRes, purchasesRes] = await Promise.all([
+      const [userRes, orderGroupsRes] = await Promise.all([
         fetch("/api/auth/me", {
           credentials: "include",
           cache: "no-store",
         }),
-        fetch(`/api/purchase/user/${userId}`, {
+        fetch(`/api/order-groups/user/${userId}`, {
           credentials: "include",
           cache: "no-store",
         }),
       ]);
 
       console.log("User response status:", userRes.status);
-      console.log("Purchases response status:", purchasesRes.status);
+      console.log("OrderGroups response status:", orderGroupsRes.status);
 
       if (!userRes.ok) {
         console.error("Failed to fetch user:", userRes.status);
@@ -113,29 +118,39 @@ export default function UserProfilePage() {
         setEditedPhoneNumber(userData.phoneNumber);
       }
 
-      if (purchasesRes.ok) {
-        const purchasesData = await purchasesRes.json();
-        console.log("✅ Purchases response:", purchasesData);
+      if (orderGroupsRes.ok) {
+        const orderGroupsData = await orderGroupsRes.json();
+        console.log("✅ OrderGroups response:", orderGroupsData);
 
-        if (purchasesData.success) {
+        if (orderGroupsData.success) {
           console.log(
-            "📦 Purchases fetched:",
-            purchasesData.data.purchases.length
+            "📦 OrderGroups fetched:",
+            orderGroupsData.data.orderGroups.length
           );
-          setPurchases(purchasesData.data.purchases);
-          setStats(purchasesData.data.stats);
 
+          // Initialize orderGroups with expanded state
+          const expandedOGs = orderGroupsData.data.orderGroups.map(
+            (og: OrderGroupWithDetails) => ({
+              ...og,
+              isExpanded: false,
+            })
+          );
+
+          setOrderGroups(expandedOGs);
+          setStats(orderGroupsData.data.stats);
+
+          // Initialize rating states
           const initialRatings: Record<string, number | null> = {};
-          purchasesData.data.purchases.forEach(
-            (purchase: PurchaseWithDetails) => {
-              initialRatings[purchase._id ?? ""] = purchase.rating ?? null;
+          orderGroupsData.data.orderGroups.forEach(
+            (og: OrderGroupWithDetails) => {
+              initialRatings[og._id?.toString() ?? ""] = og.rating ?? null;
             }
           );
           setRatingStates(initialRatings);
         }
       } else {
-        console.error("Failed to fetch purchases:", purchasesRes.status);
-        const errorData = await purchasesRes.json();
+        console.error("Failed to fetch order groups:", orderGroupsRes.status);
+        const errorData = await orderGroupsRes.json();
         console.error("Error details:", errorData);
       }
     } catch (error) {
@@ -149,14 +164,24 @@ export default function UserProfilePage() {
     fetchData();
   }, [userId]);
 
+  const handleToggleExpand = (orderGroupId: string) => {
+    setOrderGroups((prev) =>
+      prev.map((og) =>
+        og._id?.toString() === orderGroupId
+          ? { ...og, isExpanded: !og.isExpanded }
+          : og
+      )
+    );
+  };
+
   const handleRatingChange = async (
-    purchaseId: string | undefined,
+    orderGroupId: string | undefined,
     rating: number
   ) => {
-    if (!purchaseId) return;
+    if (!orderGroupId) return;
 
     try {
-      const response = await fetch(`/api/purchase/${purchaseId}`, {
+      const response = await fetch(`/api/order-groups/${orderGroupId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating }),
@@ -166,22 +191,22 @@ export default function UserProfilePage() {
 
       setRatingStates((prev) => ({
         ...prev,
-        [purchaseId]: rating,
+        [orderGroupId]: rating,
       }));
 
-      const updated = purchases.map((p) =>
-        p._id === purchaseId ? { ...p, rating } : p
+      const updated = orderGroups.map((og) =>
+        og._id?.toString() === orderGroupId ? { ...og, rating } : og
       );
-      setPurchases(updated);
+      setOrderGroups(updated);
 
-      const ratedPurchases = updated.filter(
-        (p) => p.rating !== null && p.paymentStatus === "completed"
+      const ratedOGs = updated.filter(
+        (og) => og.rating !== null && og.paymentStatus === "completed"
       );
       const avgRating =
-        ratedPurchases.length > 0
+        ratedOGs.length > 0
           ? (
-              ratedPurchases.reduce((sum, p) => sum + (p.rating || 0), 0) /
-              ratedPurchases.length
+              ratedOGs.reduce((sum, og) => sum + (og.rating || 0), 0) /
+              ratedOGs.length
             ).toFixed(1)
           : "0";
       setStats((prev) => ({ ...prev, avgRating }));
@@ -190,11 +215,11 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleRemoveRating = async (purchaseId: string | undefined) => {
-    if (!purchaseId) return;
+  const handleRemoveRating = async (orderGroupId: string | undefined) => {
+    if (!orderGroupId) return;
 
     try {
-      const response = await fetch(`/api/purchase/${purchaseId}`, {
+      const response = await fetch(`/api/order-groups/${orderGroupId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating: null }),
@@ -204,22 +229,22 @@ export default function UserProfilePage() {
 
       setRatingStates((prev) => ({
         ...prev,
-        [purchaseId]: null,
+        [orderGroupId]: null,
       }));
 
-      const updated = purchases.map((p) =>
-        p._id === purchaseId ? { ...p, rating: null } : p
+      const updated = orderGroups.map((og) =>
+        og._id?.toString() === orderGroupId ? { ...og, rating: null } : og
       );
-      setPurchases(updated);
+      setOrderGroups(updated);
 
-      const ratedPurchases = updated.filter(
-        (p) => p.rating !== null && p.paymentStatus === "completed"
+      const ratedOGs = updated.filter(
+        (og) => og.rating !== null && og.paymentStatus === "completed"
       );
       const avgRating =
-        ratedPurchases.length > 0
+        ratedOGs.length > 0
           ? (
-              ratedPurchases.reduce((sum, p) => sum + (p.rating || 0), 0) /
-              ratedPurchases.length
+              ratedOGs.reduce((sum, og) => sum + (og.rating || 0), 0) /
+              ratedOGs.length
             ).toFixed(1)
           : "0";
       setStats((prev) => ({ ...prev, avgRating }));
@@ -228,91 +253,147 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleCompletePayment = async (purchaseId: string | undefined) => {
-    if (!purchaseId) return;
+  const handleCompletePayment = async (orderGroupId: string | undefined) => {
+    if (!orderGroupId) return;
 
     try {
-      setActionLoading((prev) => ({ ...prev, [purchaseId]: true }));
-      console.log("💳 Completing payment for purchase:", purchaseId);
+      setActionLoading((prev) => ({ ...prev, [orderGroupId]: true }));
+      console.log(
+        "💳 Verifying payment status from gateway for order group:",
+        orderGroupId
+      );
 
-      const response = await fetch(`/api/purchase/${purchaseId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentStatus: "completed" }),
+      // ============ STEP 1: Verify payment with Midtrans gateway ============
+      const verifyResponse = await fetch(
+        `/api/order-groups/${orderGroupId}/verify-payment`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      const verifyData = await verifyResponse.json();
+
+      console.log("📊 Gateway verification response:", {
+        status: verifyResponse.status,
+        success: verifyData.success,
+        paymentStatus: verifyData.paymentStatus,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to complete payment");
+      // Handle different response statuses
+      if (verifyResponse.status === 402) {
+        // Payment still pending
+        console.warn("⏳ Payment is still pending on gateway");
+        alert(
+          "❌ Payment is still pending. Please complete the payment first."
+        );
+        setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        return;
       }
 
-      const { data } = await response.json();
-      console.log("✅ Payment completed:", data);
+      if (verifyResponse.status === 503) {
+        // Gateway unreachable but we might have local data
+        console.warn("⚠️ Cannot reach payment gateway - checking local status");
+        alert("⚠️ Cannot verify with payment gateway. Please try again.");
+        setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        return;
+      }
 
-      // Update the purchase in the list
-      const updated = purchases.map((p) =>
-        p._id === purchaseId ? { ...p, paymentStatus: "completed" as const } : p
-      );
-      setPurchases(updated);
+      if (!verifyResponse.ok) {
+        // Payment failed or other error
+        console.error("❌ Payment verification failed:", verifyData.error);
+        alert(`❌ ${verifyData.error || "Failed to verify payment"}`);
 
-      // Refresh data to get updated redeem code
+        // Update local state to show failed status
+        const updated = orderGroups.map((og) =>
+          og._id?.toString() === orderGroupId
+            ? { ...og, paymentStatus: "failed" as const }
+            : og
+        );
+        setOrderGroups(updated);
+
+        setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        return;
+      }
+
+      // ============ STEP 2: Payment confirmed by gateway ============
+      console.log("✅ Gateway confirmed payment is complete");
+
+      if (verifyData.data) {
+        // Update the order group in local state
+        const updated = orderGroups.map((og) =>
+          og._id?.toString() === orderGroupId
+            ? { ...og, ...verifyData.data, paymentStatus: "completed" as const }
+            : og
+        );
+        setOrderGroups(updated);
+      }
+
+      // ============ STEP 3: Refresh to get updated redeem codes ============
+      console.log("🔄 Refreshing order data...");
       await fetchData();
+
+      console.log("✅ Payment completed successfully!");
+      alert("✅ Payment confirmed! Your redeem codes are now available.");
     } catch (error) {
-      console.error("❌ Failed to complete payment:", error);
-      alert("Failed to complete payment. Please try again.");
+      console.error("❌ Failed to verify payment:", error);
+      alert("❌ Error verifying payment. Please try again.");
     } finally {
-      setActionLoading((prev) => ({ ...prev, [purchaseId]: false }));
+      setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
     }
   };
 
-  const handleCancelPurchase = async (purchaseId: string | undefined) => {
-    if (!purchaseId) return;
+  const handleCancelOrderGroup = async (orderGroupId: string | undefined) => {
+    if (!orderGroupId) return;
 
     if (
       !confirm(
-        "Are you sure you want to cancel this purchase? This action cannot be undone."
+        "Are you sure you want to cancel this order? This action cannot be undone."
       )
     ) {
       return;
     }
 
     try {
-      setActionLoading((prev) => ({ ...prev, [purchaseId]: true }));
-      console.log("❌ Cancelling purchase:", purchaseId);
+      setActionLoading((prev) => ({ ...prev, [orderGroupId]: true }));
+      console.log("❌ Cancelling order group:", orderGroupId);
 
-      const response = await fetch(`/api/purchase/${purchaseId}`, {
+      const response = await fetch(`/api/order-groups/${orderGroupId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentStatus: "cancelled" }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to cancel purchase");
+        throw new Error("Failed to cancel order group");
       }
 
       const { data } = await response.json();
-      console.log("✅ Purchase cancelled:", data);
+      console.log("✅ Order group cancelled:", data);
 
-      // Update the purchase in the list
-      const updated = purchases.map((p) =>
-        p._id === purchaseId ? { ...p, paymentStatus: "cancelled" as const } : p
+      // Update the order group in the list
+      const updated = orderGroups.map((og) =>
+        og._id?.toString() === orderGroupId
+          ? { ...og, paymentStatus: "cancelled" as const }
+          : og
       );
-      setPurchases(updated);
+      setOrderGroups(updated);
 
       // Refresh data
       await fetchData();
     } catch (error) {
-      console.error("❌ Failed to cancel purchase:", error);
-      alert("Failed to cancel purchase. Please try again.");
+      console.error("❌ Failed to cancel order group:", error);
+      alert("Failed to cancel order group. Please try again.");
     } finally {
-      setActionLoading((prev) => ({ ...prev, [purchaseId]: false }));
+      setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
     }
   };
 
-  const handleCopyRedeemCode = (code: string, purchaseId: string) => {
+  const handleCopyRedeemCode = (code: string, orderGroupId: string) => {
     navigator.clipboard
       .writeText(code)
       .then(() => {
-        setCopiedId(purchaseId);
+        setCopiedId(orderGroupId + "-" + code);
         setTimeout(() => setCopiedId(null), 2000);
       })
       .catch(() => {
@@ -362,9 +443,9 @@ export default function UserProfilePage() {
     );
   }
 
-  const totalPages = Math.ceil(purchases.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(orderGroups.length / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedData = purchases.slice(
+  const paginatedData = orderGroups.slice(
     startIndex,
     startIndex + ITEMS_PER_PAGE
   );
@@ -376,7 +457,7 @@ export default function UserProfilePage() {
         <div>
           <h1 className="text-3xl font-bold text-primary mb-2">My Profile</h1>
           <p className="text-secondary">
-            View your account information and purchase history
+            View your account information and order history
           </p>
         </div>
         <Button
@@ -503,7 +584,7 @@ export default function UserProfilePage() {
         <div className="bg-stone-900/50 border border-white/10 rounded-lg p-6 hover:border-white/20 transition">
           <div className="mb-4 flex items-start justify-between">
             <div>
-              <p className="text-secondary text-sm mb-1">Total Purchased</p>
+              <p className="text-secondary text-sm mb-1">Total Orders</p>
               <p className="text-3xl font-bold text-primary">
                 {stats.totalPurchases}
               </p>
@@ -512,7 +593,7 @@ export default function UserProfilePage() {
               <ShoppingCart className="w-5 h-5 text-blue-400" />
             </div>
           </div>
-          <p className="text-secondary text-sm">Completed orders</p>
+          <p className="text-secondary text-sm">Completed order groups</p>
         </div>
 
         <div className="bg-stone-900/50 border border-white/10 rounded-lg p-6 hover:border-white/20 transition">
@@ -546,207 +627,283 @@ export default function UserProfilePage() {
         </div>
       </div>
 
-      {/* Transaction History */}
+      {/* Order History */}
       <div className="bg-background border border-white/10 rounded-lg overflow-hidden">
         <div className="p-6 border-b border-white/10">
           <h2 className="text-xl font-bold text-primary flex items-center gap-2">
             <Calendar className="w-5 h-5" />
-            Transaction History
+            Order History
           </h2>
           <p className="text-secondary text-sm mt-1">
-            Your complete purchase history ({purchases.length} total)
+            Your complete order history ({orderGroups.length} total)
           </p>
         </div>
 
         {loading ? (
           <div className="p-8 text-center text-secondary">Loading...</div>
-        ) : purchases.length === 0 ? (
+        ) : orderGroups.length === 0 ? (
           <div className="p-8 text-center text-secondary">
-            No purchases yet. Visit the products page to make your first
-            purchase!
+            No orders yet. Visit the products page to make your first order!
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="text-primary">Product</TableHead>
-                <TableHead className="text-primary">Status</TableHead>
-                <TableHead className="text-primary">Redeem Code</TableHead>
-                <TableHead className="text-primary">Amount</TableHead>
-                <TableHead className="text-primary">Date</TableHead>
-                <TableHead className="text-primary">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedData.map((purchase) => {
-                const purchaseId = purchase._id ?? "";
-                const createdDate = toDate(purchase.createdAt);
-                const redeemCode = ensureString(purchase.redeemCode);
-                const isActionLoading = actionLoading[purchaseId] || false;
+          <div className="space-y-4 p-6">
+            {paginatedData.map((orderGroup) => {
+              const ogId = orderGroup._id?.toString() ?? "";
+              const createdDate = toDate(orderGroup.createdAt);
+              const isActionLoading = actionLoading[ogId] || false;
+              const isExpanded = orderGroup.isExpanded || false;
+              const paidStocks =
+                orderGroup.stocks?.filter((s) => s.status === "paid") || [];
 
-                return (
-                  <TableRow
-                    key={purchaseId}
-                    className="border-white/10 hover:bg-white/5 transition"
+              return (
+                <div
+                  key={ogId}
+                  className="border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition"
+                >
+                  {/* Order Header - Clickable Row */}
+                  <div
+                    className="p-4 bg-stone-900/30 cursor-pointer hover:bg-stone-900/50 transition flex items-center justify-between"
+                    onClick={() => handleToggleExpand(ogId)}
                   >
-                    <TableCell className="font-medium text-primary">
-                      {purchase.productName}
-                    </TableCell>
-
-                    <TableCell className="text-secondary text-sm font-mono">
-                      {purchase.paymentStatus === "completed" ? (
-                        <button
-                          onClick={() =>
-                            handleCopyRedeemCode(redeemCode, purchaseId)
-                          }
-                          className="flex items-center gap-2 pl-1 pr-3 py-1 rounded hover:text-stone-100 transition cursor-pointer text-xs"
-                          title="Click to copy redeem code"
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                      <div>
+                        <p className="text-xs text-secondary mb-1">Product</p>
+                        <p className="text-sm font-medium text-primary">
+                          {orderGroup.productName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-secondary mb-1">Quantity</p>
+                        <p className="text-sm font-medium text-primary">
+                          {orderGroup.quantity} item
+                          {orderGroup.quantity > 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <div className="hidden lg:block">
+                        <p className="text-xs text-secondary mb-1">
+                          Total Paid
+                        </p>
+                        <p className="text-sm font-medium text-primary">
+                          Rp {orderGroup.totalPaid.toLocaleString("id-ID")}
+                        </p>
+                      </div>
+                      <div className="hidden lg:block">
+                        <p className="text-xs text-secondary mb-1">Date</p>
+                        <p className="text-sm font-medium text-primary">
+                          {createdDate.toLocaleDateString("id-ID", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-secondary mb-1">Status</p>
+                        <Badge
+                          className={`text-xs ${
+                            orderGroup.paymentStatus === "completed"
+                              ? "bg-green-500/20 text-green-300 border-green-500/30"
+                              : orderGroup.paymentStatus === "pending"
+                              ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
+                              : orderGroup.paymentStatus === "cancelled"
+                              ? "bg-gray-500/20 text-gray-300 border-gray-500/30"
+                              : "bg-red-500/20 text-red-300 border-red-500/30"
+                          }`}
                         >
-                          <span>{redeemCode}</span>
-                          {copiedId === purchaseId ? (
-                            <Check className="w-4 h-4" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      ) : purchase.paymentStatus === "pending" ? (
-                        <div className="flex gap-x-1 text-stone-400">
-                          <HourglassIcon className="w-3" />
-                          <span className="mt-0.5">Awaiting Payment</span>
-                        </div>
-                      ) : purchase.paymentStatus === "cancelled" ? (
-                        <div className="flex gap-x-1 text-red-400">
-                          <XIcon className="w-4" />
-                          <span className="mt-px">Payment Failed</span>
-                        </div>
-                      ) : purchase.paymentStatus === "failed" ? (
-                        <div className="flex gap-x-1 text-red-400">
-                          <XIcon className="w-4" />
-                          <span className="mt-px">Payment Failed</span>
-                        </div>
+                          {orderGroup.paymentStatus}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Expand Icon */}
+                    <div className="ml-4 flex-shrink-0">
+                      {isExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-secondary" />
                       ) : (
-                        "—"
+                        <ChevronDown className="w-5 h-5 text-secondary" />
                       )}
-                    </TableCell>
-                    <TableCell className="text-primary">
-                      Rp {purchase.totalPaid.toLocaleString("id-ID")}
-                    </TableCell>
-                    <TableCell className="text-secondary text-sm">
-                      {createdDate.toLocaleDateString("id-ID", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={`${
-                          purchase.paymentStatus === "completed"
-                            ? "bg-green-500/20 text-green-300 border-green-500/30"
-                            : purchase.paymentStatus === "pending"
-                            ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
-                            : purchase.paymentStatus === "cancelled"
-                            ? "bg-gray-500/20 text-gray-300 border-gray-500/30"
-                            : purchase.paymentStatus === "failed"
-                            ? "bg-red-500/20 text-red-300 border-red-500/30"
-                            : "bg-slate-500/20 text-slate-300 border-slate-500/30"
-                        }`}
-                      >
-                        {purchase.paymentStatus}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {purchase.paymentStatus === "pending" ? (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            onClick={() => handleCompletePayment(purchaseId)}
-                            disabled={isActionLoading}
-                            className="h-8 px-3 text-xs bg-primary text-black hover:bg-primary/70 border cursor-pointer gap-1"
-                          >
-                            {isActionLoading ? (
-                              <Loader className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <CreditCard className="w-3 h-3" />
-                            )}
-                            Pay
-                          </Button>
-                          <Button
-                            onClick={() => handleCancelPurchase(purchaseId)}
-                            disabled={isActionLoading}
-                            className="h-8 px-3 text-xs bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 gap-1 cursor-pointer"
-                          >
-                            {isActionLoading ? (
-                              <Loader className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-3 h-3" />
-                            )}
-                            Cancel
-                          </Button>
+                    </div>
+                  </div>
+
+                  {/* Expandable Content */}
+                  {isExpanded && (
+                    <div className="border-t border-white/10 p-4 bg-stone-950/50 space-y-4">
+                      {/* Mobile: Show total and date if not shown in header */}
+                      <div className="lg:hidden grid grid-cols-2 gap-4 pb-4 border-b border-white/10">
+                        <div>
+                          <p className="text-xs text-secondary mb-1">
+                            Total Paid
+                          </p>
+                          <p className="text-sm font-medium text-primary">
+                            Rp {orderGroup.totalPaid.toLocaleString("id-ID")}
+                          </p>
                         </div>
-                      ) : purchase.paymentStatus === "completed" ? (
-                        <div className="flex items-center gap-2">
-                          {ratingStates[purchaseId] ? (
-                            <div className="flex items-center gap-1">
+                        <div>
+                          <p className="text-xs text-secondary mb-1">Date</p>
+                          <p className="text-sm font-medium text-primary">
+                            {createdDate.toLocaleDateString("id-ID", {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Redeem Codes - Only show if completed and has paid stocks */}
+                      {orderGroup.paymentStatus === "completed" &&
+                        paidStocks.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-primary mb-3">
+                              Redeem Codes ({paidStocks.length})
+                            </h4>
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                              {paidStocks.map((stock, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between bg-stone-800/30 border border-white/10 rounded p-3 hover:border-white/20 transition"
+                                >
+                                  <code className="text-xs sm:text-sm text-primary font-mono break-all">
+                                    {stock.redeemCode}
+                                  </code>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopyRedeemCode(
+                                        stock.redeemCode,
+                                        `${ogId}-${idx}`
+                                      );
+                                    }}
+                                    className="flex items-center gap-1 px-2 sm:px-3 py-1 rounded hover:bg-white/10 transition text-xs flex-shrink-0 ml-2"
+                                    title="Copy redeem code"
+                                  >
+                                    {copiedId === `${ogId}-${idx}` ? (
+                                      <>
+                                        <Check className="w-3 h-3 sm:w-4 sm:h-4 text-green-400" />
+                                        <span className="text-green-400 hidden sm:inline">
+                                          Copied
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-secondary" />
+                                        <span className="text-secondary hidden sm:inline">
+                                          Copy
+                                        </span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Status Messages */}
+                      {orderGroup.paymentStatus === "pending" && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-3">
+                          <p className="text-xs sm:text-sm text-yellow-300">
+                            ⏳ This order is awaiting payment. Complete the
+                            payment to receive your redeem codes.
+                          </p>
+                        </div>
+                      )}
+
+                      {orderGroup.paymentStatus === "cancelled" && (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded p-3">
+                          <p className="text-xs sm:text-sm text-red-300">
+                            ❌ This order has been cancelled. All items have
+                            been released back to inventory.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-col sm:flex-row gap-2 pt-4 border-t border-white/10">
+                        {orderGroup.paymentStatus === "pending" && (
+                          <>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCompletePayment(ogId);
+                              }}
+                              disabled={isActionLoading}
+                              className="flex-1 h-9 text-xs sm:text-sm bg-primary text-black hover:bg-primary/70 gap-1"
+                            >
+                              {isActionLoading ? (
+                                <Loader className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <CreditCard className="w-3 h-3" />
+                              )}
+                              <span>Complete Payment</span>
+                            </Button>
+                            <Button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancelOrderGroup(ogId);
+                              }}
+                              disabled={isActionLoading}
+                              className="flex-1 h-9 text-xs sm:text-sm bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 gap-1"
+                            >
+                              {isActionLoading ? (
+                                <Loader className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3" />
+                              )}
+                              <span>Cancel Order</span>
+                            </Button>
+                          </>
+                        )}
+
+                        {orderGroup.paymentStatus === "completed" && (
+                          <div className="w-full">
+                            <p className="text-xs text-secondary mb-3">
+                              Rate this order:
+                            </p>
+                            <div className="flex items-center gap-2 flex-wrap">
                               <div className="flex gap-0.5">
                                 {Array.from({ length: 5 }).map((_, i) => (
                                   <button
                                     key={i}
-                                    onClick={() =>
-                                      handleRatingChange(purchaseId, i + 1)
-                                    }
-                                    className="focus:outline-none transition"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRatingChange(ogId, i + 1);
+                                    }}
+                                    className="focus:outline-none transition hover:scale-110"
                                   >
                                     <Star
                                       className={`w-4 h-4 ${
-                                        i < (ratingStates[purchaseId] || 0)
+                                        i < (ratingStates[ogId] || 0)
                                           ? "text-yellow-400 fill-yellow-400"
-                                          : "text-gray-500"
+                                          : "text-gray-500 hover:text-yellow-400"
                                       }`}
                                     />
                                   </button>
                                 ))}
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveRating(purchaseId)}
-                                className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
-                              >
-                                Remove
-                              </Button>
+                              {ratingStates[ogId] && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveRating(ogId);
+                                  }}
+                                  className="h-6 px-2 text-xs text-secondary hover:text-red-400 hover:bg-red-500/10"
+                                >
+                                  Remove
+                                </Button>
+                              )}
                             </div>
-                          ) : (
-                            <div className="flex items-center gap-1">
-                              <div className="flex gap-0.5">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                  <button
-                                    key={i}
-                                    onClick={() =>
-                                      handleRatingChange(purchaseId, i + 1)
-                                    }
-                                    className="focus:outline-none transition hover:scale-110"
-                                  >
-                                    <Star className="w-4 h-4 text-gray-500 hover:text-yellow-400" />
-                                  </button>
-                                ))}
-                              </div>
-                              <span className="text-secondary text-xs">
-                                Rate
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-secondary text-xs">
-                          payment cancelled
-                        </span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

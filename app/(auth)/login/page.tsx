@@ -45,7 +45,7 @@ export default function LoginPage() {
         if (data.user.role === "admin") {
           router.push("/admin/products-management");
         } else {
-          router.push("/product");
+          router.push("/products");
         }
         router.refresh(); // Force a refresh
       }, 100);

@@ -1,6 +1,18 @@
-// lib/db/models/Stock.ts
+// lib/db/models/Stock.ts - UPDATED
 import mongoose, { Schema, Model } from 'mongoose';
-import { StockDocument } from '@/lib/types';
+
+export interface StockDocument {
+  _id?: string;
+  productId: string;
+  redeemCode: string;
+  addedDate?: Date;
+  orderGroupId?: string | null; // Links to OrderGroup instead of individual purchase
+  status: "available" | "pending" | "paid";
+  reservedAt?: Date | null;
+  paidAt?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 const StockSchema = new Schema<StockDocument>(
   {
@@ -14,15 +26,16 @@ const StockSchema = new Schema<StockDocument>(
       type: String,
       required: [true, 'Redeem code is required'],
       unique: true,
+      sparse: true,
     },
     addedDate: {
       type: Date,
-      default: Date.now,
+      default: () => new Date(),
     },
-    purchaseId: {
+    orderGroupId: {
       type: String,
-      ref: 'Purchase',
       default: null,
+      ref: 'OrderGroup',
       index: true,
     },
     status: {
@@ -45,9 +58,9 @@ const StockSchema = new Schema<StockDocument>(
   }
 );
 
-// Compound indexes for efficient queries
 StockSchema.index({ productId: 1, status: 1 });
-StockSchema.index({ status: 1, productId: 1 });
+StockSchema.index({ orderGroupId: 1 });
+StockSchema.index({ status: 1 });
 
 const Stock: Model<StockDocument> =
   mongoose.models.Stock || mongoose.model<StockDocument>('Stock', StockSchema);

@@ -95,6 +95,8 @@ function CheckoutContent() {
     return product ? product.price * quantity : 0;
   };
 
+  // In app/(public)/checkout/page.tsx - Update the handlePayNow function
+
   const handlePayNow = async () => {
     if (!product || !userId) {
       setError("User ID not found. Please log in.");
@@ -138,26 +140,68 @@ function CheckoutContent() {
         data.token.substring(0, 20) + "..."
       );
       console.log("🎯 Opening Snap popup in SANDBOX mode");
+      console.log("📍 Order Group ID:", data.orderGroupId);
 
       // Open Midtrans Snap popup
       if (window.snap) {
         window.snap.pay(data.token, {
-          onSuccess: function (result: any) {
-            console.log("✅ Payment success:", result);
+          onSuccess: async function (result: any) {
+            console.log("✅ Payment success from Midtrans:", result);
+
+            try {
+              // ============ CRITICAL: Update order status immediately ============
+              console.log("💳 Updating order status to completed...");
+
+              const updateResponse = await fetch(
+                `/api/order-groups/${data.orderGroupId}`,
+                {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    paymentStatus: "completed",
+                    midtransTransactionId: result.transaction_id,
+                  }),
+                }
+              );
+
+              const updateData = await updateResponse.json();
+
+              if (!updateResponse.ok) {
+                console.warn(
+                  "⚠️ Failed to update order status:",
+                  updateData.error
+                );
+                console.warn("   But proceeding with redirect anyway");
+              } else {
+                console.log("✅ Order status updated to completed");
+                console.log("   Order Group ID:", data.orderGroupId);
+              }
+            } catch (updateError) {
+              console.error("❌ Error updating order status:", updateError);
+              console.warn("   Proceeding with redirect anyway");
+            }
+
+            // Redirect regardless of update success
+            console.log("🚀 Redirecting to profile...");
             router.push("/profile?tab=history&payment=success");
           },
+
           onPending: function (result: any) {
             console.log("⏳ Payment pending:", result);
+            setProcessing(false);
             router.push("/profile?tab=history&payment=pending");
           },
+
           onError: function (result: any) {
             console.error("❌ Payment error:", result);
             setError("Payment failed. Please try again.");
             setProcessing(false);
           },
+
           onClose: function () {
-            console.log("🚪 Payment popup closed");
+            console.log("🚪 Payment popup closed by user");
             setProcessing(false);
+            setError("Payment was cancelled");
           },
         });
       } else {

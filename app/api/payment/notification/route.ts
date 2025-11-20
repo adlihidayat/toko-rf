@@ -1,13 +1,11 @@
-// app/api/payment/notification/route.ts
+// app/api/payment/notification/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
 import { MidtransService } from '@/lib/midtrans/service';
-import { PurchaseService } from '@/lib/db/services/purchases';
+// import { OrderGroupService } from '@/lib/db/services/order-groups';
 import { StockService } from '@/lib/db/services/stocks';
 import crypto from 'crypto';
+import { OrderGroupService } from '@/lib/db/services/order-group';
 
-/**
- * Verify Midtrans notification signature for security
- */
 function verifySignature(notification: any, serverKey: string): boolean {
   const { order_id, status_code, gross_amount, signature_key } = notification;
 
@@ -27,6 +25,7 @@ export async function POST(request: NextRequest) {
       orderId: notification.order_id,
       status: notification.transaction_status,
       fraudStatus: notification.fraud_status,
+      timestamp: new Date().toISOString(),
     });
 
     // ============ SECURITY: Verify signature ============
@@ -39,121 +38,89 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ============ Parse notification status ============
-    const { status, orderId, transactionStatus, fraudStatus } =
-      MidtransService.parseNotificationStatus(notification);
+    // ============ Parse notification ============
+    const { status } = MidtransService.parseNotificationStatus(notification);
+    const midtransOrderId = notification.order_id;
+    const midtransTransactionId = notification.transaction_id;
 
-    console.log(`💳 Payment status for order ${orderId}: ${status}`);
+    console.log(`💳 Payment status for order ${midtransOrderId}: ${status}`);
 
-    // Extract purchase IDs from order ID (format: "purchaseId1-purchaseId2-purchaseId3")
-    const purchaseIds = orderId.split('-');
+    // ============ Get OrderGroup by Midtrans Order ID ============
+    const orderGroup = await OrderGroupService.getByMidtransOrderId(
+      midtransOrderId
+    );
+
+    if (!orderGroup) {
+      console.error(`❌ OrderGroup not found for order ID: ${midtransOrderId}`);
+      return NextResponse.json(
+        { success: false, error: 'Order not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('📍 Found OrderGroup:', orderGroup._id);
 
     // ============ HANDLE DIFFERENT PAYMENT STATUSES ============
     if (status === 'completed') {
-      console.log('✅ Payment successful, marking stocks as PAID...');
+      console.log('✅ Payment successful for OrderGroup:', orderGroup._id);
 
-      // Update all related purchases and mark their stocks as paid
-      const updatePromises = purchaseIds.map(async (purchaseId) => {
-        try {
-          // Get the purchase to find its stock
-          const purchase = await PurchaseService.getPurchaseById(purchaseId);
+      // Mark all stocks as PAID
+      const updatedOrderGroup =
+        await OrderGroupService.completePayment(
+          orderGroup._id!.toString(),
+          midtransTransactionId
+        );
 
-          if (!purchase) {
-            console.error(`❌ Purchase not found: ${purchaseId}`);
-            return null;
-          }
+      if (!updatedOrderGroup) {
+        throw new Error('Failed to update OrderGroup');
+      }
 
-          // Mark the stock as PAID (redeem code now available)
-          if (purchase.stockId) {
-            await StockService.markStockAsPaid(purchase.stockId, purchaseId);
-            console.log(`✅ Stock marked as PAID: ${purchase.stockId}`);
-          }
-
-          // Update purchase status to completed
-          const updatedPurchase = await PurchaseService.updatePurchaseStatus(
-            purchaseId,
-            'completed'
-          );
-
-          console.log(`✅ Purchase completed: ${purchaseId}`);
-          return updatedPurchase;
-        } catch (error) {
-          console.error(`❌ Failed to process purchase ${purchaseId}:`, error);
-          return null;
-        }
-      });
-
-      await Promise.all(updatePromises);
-
-      console.log(`✅ All ${purchaseIds.length} purchases marked as completed`);
-
+      console.log('✅ OrderGroup and stocks marked as completed');
     } else if (status === 'pending') {
-      console.log('⏳ Payment still pending, keeping stocks reserved...');
-
-      // Update purchases to pending status but keep stocks reserved
-      const updatePromises = purchaseIds.map(async (purchaseId) => {
-        try {
-          return await PurchaseService.updatePurchaseStatus(purchaseId, 'pending');
-        } catch (error) {
-          console.error(`Failed to update purchase ${purchaseId}:`, error);
-          return null;
-        }
-      });
-
-      await Promise.all(updatePromises);
-
+      console.log(
+        '⏳ Payment pending for OrderGroup:',
+        orderGroup._id,
+        '- keeping stocks reserved'
+      );
+      // Stocks already marked as 'pending' during order creation
+      // Just ensure the order group status is pending
+      await OrderGroupService.updatePaymentStatus(
+        orderGroup._id!.toString(),
+        'pending'
+      );
     } else if (status === 'failed' || status === 'cancelled') {
-      console.log('❌ Payment failed/cancelled, releasing reserved stocks...');
+      console.log(
+        '❌ Payment failed/cancelled for OrderGroup:',
+        orderGroup._id,
+        '- releasing stocks'
+      );
 
-      // Release all reserved stocks and mark purchases as failed
-      const updatePromises = purchaseIds.map(async (purchaseId) => {
-        try {
-          // Get purchase to find stock
-          const purchase = await PurchaseService.getPurchaseById(purchaseId);
+      // Release all stocks back to available
+      const failedOrderGroup = await OrderGroupService.failPayment(
+        orderGroup._id!.toString()
+      );
 
-          if (!purchase) {
-            console.error(`Purchase not found: ${purchaseId}`);
-            return null;
-          }
+      if (!failedOrderGroup) {
+        throw new Error('Failed to update OrderGroup');
+      }
 
-          // Release the stock back to available
-          if (purchase.stockId) {
-            await StockService.markStockAsAvailable(purchase.stockId);
-            console.log(`✅ Stock released to available: ${purchase.stockId}`);
-          }
-
-          // Mark purchase as failed
-          return await PurchaseService.updatePurchaseStatus(purchaseId, 'failed');
-        } catch (error) {
-          console.error(`Failed to release stock for purchase ${purchaseId}:`, error);
-          return null;
-        }
-      });
-
-      await Promise.all(updatePromises);
-
-      console.log(`✅ All ${purchaseIds.length} purchases marked as failed, stocks released`);
+      console.log('✅ OrderGroup marked as failed, all stocks released');
     }
 
-    // ============ LOG TRANSACTION ============
-    console.log('📊 Transaction summary:', {
-      orderId,
-      status,
-      transactionStatus,
-      fraudStatus,
-      purchasesCount: purchaseIds.length,
-      timestamp: new Date().toISOString(),
-    });
+    console.log('📊 Notification processed successfully');
 
     return NextResponse.json({
       success: true,
       message: 'Notification processed successfully',
+      orderGroupId: orderGroup._id,
     });
-
   } catch (error: any) {
     console.error('❌ Notification processing error:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to process notification' },
+      {
+        success: false,
+        error: error.message || 'Failed to process notification',
+      },
       { status: 500 }
     );
   }
