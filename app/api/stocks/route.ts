@@ -1,11 +1,17 @@
-// app/api/stocks/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { StockService } from '@/lib/db/services/stocks';
 
 export async function GET() {
   try {
     const stocks = await StockService.getAllStocksWithProductInfo();
-    return NextResponse.json({ success: true, data: stocks });
+
+    // ============ SECURITY: Strip redeem codes ============
+    const safeStocks = stocks.map(stock => {
+      const { redeemCode, ...safeStock } = stock;
+      return safeStock;
+    });
+
+    return NextResponse.json({ success: true, data: safeStocks });
   } catch (error) {
     console.error('Error fetching stocks:', error);
     return NextResponse.json(
@@ -27,7 +33,11 @@ export async function POST(request: NextRequest) {
     }
 
     const stock = await StockService.createStock(body);
-    return NextResponse.json({ success: true, data: stock }, { status: 201 });
+
+    // ============ SECURITY: Don't return full stock data with code ============
+    const { redeemCode, ...safeStock } = stock;
+
+    return NextResponse.json({ success: true, data: safeStock }, { status: 201 });
   } catch (error) {
     console.error('Error creating stock:', error);
     return NextResponse.json(

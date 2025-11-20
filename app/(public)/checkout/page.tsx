@@ -10,8 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ShoppingCart, Loader, AlertCircle } from "lucide-react";
 import { ProductDocument } from "@/lib/types";
 import Script from "next/script";
+import {
+  SuccessDialog,
+  ErrorDialog,
+  InfoDialog,
+} from "@/components/shared/dialog";
+import { fetchWithAuth } from "@/lib/utils/auth";
 
-// Declare snap on window
 declare global {
   interface Window {
     snap?: {
@@ -20,12 +25,17 @@ declare global {
   }
 }
 
-// FORCE SANDBOX MODE
 const USE_SANDBOX = true;
 const MIDTRANS_CLIENT_KEY = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "";
 const SNAP_URL = USE_SANDBOX
   ? "https://app.sandbox.midtrans.com/snap/snap.js"
   : "https://app.midtrans.com/snap/snap.js";
+
+interface DialogState {
+  type: "success" | "error" | "info" | null;
+  title: string;
+  description: string;
+}
 
 function CheckoutContent() {
   const router = useRouter();
@@ -39,6 +49,11 @@ function CheckoutContent() {
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [snapLoaded, setSnapLoaded] = useState(false);
+  const [dialog, setDialog] = useState<DialogState>({
+    type: null,
+    title: "",
+    description: "",
+  });
 
   // Extract userId from cookies
   useEffect(() => {
@@ -65,8 +80,12 @@ function CheckoutContent() {
         const { data, success, error: apiError } = await response.json();
 
         if (!success || !data) {
-          setError(apiError || "Product not found");
-          router.push("/products");
+          setDialog({
+            type: "error",
+            title: "Product Not Found",
+            description: apiError || "The product could not be loaded.",
+          });
+          setTimeout(() => router.push("/products"), 2000);
           return;
         }
 
@@ -74,8 +93,12 @@ function CheckoutContent() {
         setQuantity(data.minimumPurchase);
       } catch (error) {
         console.error("Failed to fetch product:", error);
-        setError("Failed to load product");
-        router.push("/products");
+        setDialog({
+          type: "error",
+          title: "Load Error",
+          description: "Failed to load the product. Redirecting...",
+        });
+        setTimeout(() => router.push("/products"), 2000);
       } finally {
         setLoading(false);
       }
@@ -95,16 +118,22 @@ function CheckoutContent() {
     return product ? product.price * quantity : 0;
   };
 
-  // In app/(public)/checkout/page.tsx - Update the handlePayNow function
-
   const handlePayNow = async () => {
     if (!product || !userId) {
-      setError("User ID not found. Please log in.");
+      setDialog({
+        type: "error",
+        title: "Missing Information",
+        description: "User ID not found. Please log in.",
+      });
       return;
     }
 
     if (!snapLoaded) {
-      setError("Payment system is loading. Please wait...");
+      setDialog({
+        type: "error",
+        title: "Payment System",
+        description: "Payment system is loading. Please wait...",
+      });
       return;
     }
 
@@ -114,7 +143,7 @@ function CheckoutContent() {
 
       console.log("🔄 Creating payment transaction...");
 
-      // Create payment transaction
+      // ✅ Step 1: Get Midtrans token and reserved stocks (don't create order yet)
       const response = await fetch("/api/payment/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,88 +159,147 @@ function CheckoutContent() {
 
       if (!success) {
         console.error("❌ Payment creation failed:", apiError);
-        setError(apiError || "Payment processing failed");
+        setDialog({
+          type: "error",
+          title: "Payment Error",
+          description: apiError || "Payment processing failed",
+        });
         setProcessing(false);
         return;
       }
 
-      console.log(
-        "✅ Payment token received:",
-        data.token.substring(0, 20) + "..."
-      );
-      console.log("🎯 Opening Snap popup in SANDBOX mode");
-      console.log("📍 Order Group ID:", data.orderGroupId);
+      console.log("✅ Payment token received");
 
-      // Open Midtrans Snap popup
       if (window.snap) {
         window.snap.pay(data.token, {
           onSuccess: async function (result: any) {
             console.log("✅ Payment success from Midtrans:", result);
 
             try {
-              // ============ CRITICAL: Update order status immediately ============
-              console.log("💳 Updating order status to completed...");
-
-              const updateResponse = await fetch(
-                `/api/order-groups/${data.orderGroupId}`,
+              // ✅ Step 2: NOW create the OrderGroup because payment succeeded
+              const confirmResponse = await fetchWithAuth(
+                `/api/payment/confirm`,
                 {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
+                  method: "POST",
                   body: JSON.stringify({
-                    paymentStatus: "completed",
+                    tempMidtransOrderId: data.tempMidtransOrderId,
+                    tempStockIds: data.tempStockIds,
+                    productId: data.productId,
+                    quantity: data.quantity,
+                    totalPaid: data.totalPaid,
+                    userId: data.userId,
                     midtransTransactionId: result.transaction_id,
+                    paymentStatus: "completed", // ✅ Payment succeeded
                   }),
                 }
               );
 
-              const updateData = await updateResponse.json();
-
-              if (!updateResponse.ok) {
-                console.warn(
-                  "⚠️ Failed to update order status:",
-                  updateData.error
-                );
-                console.warn("   But proceeding with redirect anyway");
+              if (!confirmResponse.ok) {
+                console.warn("⚠️ Failed to confirm payment");
               } else {
-                console.log("✅ Order status updated to completed");
-                console.log("   Order Group ID:", data.orderGroupId);
+                console.log("✅ Order created and payment confirmed");
               }
-            } catch (updateError) {
-              console.error("❌ Error updating order status:", updateError);
-              console.warn("   Proceeding with redirect anyway");
+            } catch (confirmError) {
+              console.error("❌ Error confirming payment:", confirmError);
             }
 
-            // Redirect regardless of update success
-            console.log("🚀 Redirecting to profile...");
-            router.push("/profile?tab=history&payment=success");
+            setDialog({
+              type: "success",
+              title: "Payment Successful",
+              description:
+                "Your payment has been completed! Redirecting to your history...",
+            });
+
+            setTimeout(() => {
+              router.push("/history?tab=history&payment=success");
+            }, 2000);
           },
 
           onPending: function (result: any) {
             console.log("⏳ Payment pending:", result);
-            setProcessing(false);
-            router.push("/profile?tab=history&payment=pending");
+
+            // ✅ Step 2: Create OrderGroup with pending status
+            const confirmPending = async () => {
+              try {
+                const confirmResponse = await fetchWithAuth(
+                  `/api/payment/confirm`,
+                  {
+                    method: "POST",
+                    body: JSON.stringify({
+                      tempMidtransOrderId: data.tempMidtransOrderId,
+                      tempStockIds: data.tempStockIds,
+                      productId: data.productId,
+                      quantity: data.quantity,
+                      totalPaid: data.totalPaid,
+                      userId: data.userId,
+                      midtransTransactionId: result.transaction_id,
+                      paymentStatus: "pending", // ✅ Payment pending
+                    }),
+                  }
+                );
+
+                if (!confirmResponse.ok) {
+                  console.warn("⚠️ Failed to create pending order");
+                } else {
+                  console.log("✅ Order created with pending status");
+                }
+              } catch (error) {
+                console.error("❌ Error creating pending order:", error);
+              }
+            };
+
+            confirmPending();
+
+            setDialog({
+              type: "info",
+              title: "Payment Pending",
+              description:
+                "Your payment is still pending. You will be redirected to your history.",
+            });
+
+            setTimeout(() => {
+              router.push("/history?tab=history&payment=pending");
+            }, 2000);
           },
 
           onError: function (result: any) {
             console.error("❌ Payment error:", result);
-            setError("Payment failed. Please try again.");
+            setDialog({
+              type: "error",
+              title: "Payment Failed",
+              description: "Payment failed. Please try again.",
+            });
             setProcessing(false);
+            // ✅ NO OrderGroup created on error - stocks are released
           },
 
           onClose: function () {
             console.log("🚪 Payment popup closed by user");
             setProcessing(false);
-            setError("Payment was cancelled");
+            setDialog({
+              type: "error",
+              title: "Payment Cancelled",
+              description: "Payment was cancelled. Stocks have been released.",
+            });
+            // ✅ NO OrderGroup created on close - stocks are released
           },
         });
       } else {
         console.error("❌ Snap not available");
-        setError("Payment system not available");
+        setDialog({
+          type: "error",
+          title: "Payment System Error",
+          description: "Payment system not available",
+        });
         setProcessing(false);
       }
     } catch (error) {
       console.error("❌ Failed to process payment:", error);
-      setError("Payment processing failed. Please try again.");
+      setDialog({
+        type: "error",
+        title: "Error",
+        description: "Payment processing failed. Please try again.",
+      });
       setProcessing(false);
     }
   };
@@ -249,22 +337,55 @@ function CheckoutContent() {
 
   return (
     <>
+      {/* Dialog System */}
+      {dialog.type === "success" && (
+        <SuccessDialog
+          open={dialog.type === "success"}
+          onOpenChange={() =>
+            setDialog({ type: null, title: "", description: "" })
+          }
+          title={dialog.title}
+          description={dialog.description}
+        />
+      )}
+
+      {dialog.type === "error" && (
+        <ErrorDialog
+          open={dialog.type === "error"}
+          onOpenChange={() =>
+            setDialog({ type: null, title: "", description: "" })
+          }
+          title={dialog.title}
+          description={dialog.description}
+        />
+      )}
+
+      {dialog.type === "info" && (
+        <InfoDialog
+          open={dialog.type === "info"}
+          onOpenChange={() =>
+            setDialog({ type: null, title: "", description: "" })
+          }
+          title={dialog.title}
+          description={dialog.description}
+        />
+      )}
+
       {/* Load Midtrans Snap.js - SANDBOX VERSION */}
       <Script
         src={SNAP_URL}
         data-client-key={MIDTRANS_CLIENT_KEY}
         onLoad={() => {
           console.log("✅ Midtrans Snap loaded (SANDBOX MODE)");
-          console.log("📍 Snap URL:", SNAP_URL);
-          console.log(
-            "🔑 Client Key:",
-            MIDTRANS_CLIENT_KEY.substring(0, 15) + "..."
-          );
           setSnapLoaded(true);
         }}
         onError={() => {
           console.error("❌ Failed to load Midtrans Snap");
-          setError("Failed to load payment system");
+          setDialog({
+            type: "error",
+            title: "Script Error",
+            description: "Failed to load payment system",
+          });
         }}
         strategy="afterInteractive"
       />
@@ -290,14 +411,6 @@ function CheckoutContent() {
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
-
-            {/* Error Alert */}
-            {error && (
-              <div className="mb-8 p-4 bg-red-900/20 border border-red-500/30 rounded-lg flex gap-3">
-                <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                <p className="text-red-300">{error}</p>
-              </div>
-            )}
 
             {/* Header */}
             <div className="text-center mb-12">

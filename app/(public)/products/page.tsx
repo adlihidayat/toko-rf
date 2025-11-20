@@ -317,7 +317,10 @@ export default function ProductsPage() {
                         name={product.name}
                         price={`Rp ${product.price.toLocaleString("id-ID")}`}
                         stock={product.availableStockCount}
-                        isOutOfStock={product.availableStockCount === 0}
+                        isOutOfStock={
+                          product.availableStockCount <
+                          (product.minimumPurchase || 1)
+                        }
                         isMostPopular={product.badge === "popular"}
                         cpuCore={product.cpuCore}
                         android={product.android}

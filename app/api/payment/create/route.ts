@@ -1,8 +1,8 @@
-// app/api/payment/create/route.ts - SIMPLIFIED
+// app / api / payment / create / route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { StockService } from '@/lib/db/services/stocks';
 import { MidtransService } from '@/lib/midtrans/service';
-import { OrderGroupService } from '@/lib/db/services/order-group';
+import { ProductService } from '@/lib/db/services/products';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,11 +24,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ============ FETCH PRODUCT DATA ============
+    const product = await ProductService.getProductById(productId);
+
+    if (!product) {
+      return NextResponse.json(
+        { success: false, error: 'Product not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('📦 Product found:', {
+      name: product.name,
+      minimumPurchase: product.minimumPurchase,
+    });
+
+    // ============ SECURITY CHECK: Verify minimum purchase ============
+    if (quantity < (product.minimumPurchase || 1)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Minimum purchase is ${product.minimumPurchase}. You requested ${quantity}.`,
+        },
+        { status: 400 }
+      );
+    }
+
     // ============ SECURITY CHECK: Verify available stock ============
     const availableCount = await StockService.getAvailableStockCount(productId);
     console.log('📦 Available stock count:', availableCount);
 
-    if (availableCount === 0) {
+    if (availableCount < (product.minimumPurchase || 1)) {
       return NextResponse.json(
         { success: false, error: 'Product is out of stock' },
         { status: 400 }
@@ -67,37 +93,15 @@ export async function POST(request: NextRequest) {
       tempStockIds.push(...reservedStocks.map((s) => s._id.toString()));
       console.log('✅ Stocks reserved:', tempStockIds);
 
-      // ============ STEP 2: Generate temporary Midtrans Order ID ============
-      // Use a simple format: ogid_{timestamp}_{random}
-      // This will be the same as OrderGroup ID after creation
+      // ============ STEP 2: Generate Midtrans Order ID ============
+      // ✅ CHANGED: Just return a temporary ID, don't create OrderGroup yet
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 8);
-      const tempMidtransOrderId = `ogid_${timestamp}_${random}`;
+      const midtransOrderId = `temp_${timestamp}_${random}`;
 
-      console.log('📝 Generated temporary Midtrans Order ID:', tempMidtransOrderId);
+      console.log('📝 Generated temporary Midtrans Order ID:', midtransOrderId);
 
-      // ============ STEP 3: Create OrderGroup with Midtrans Order ID ============
-      const orderGroup = await OrderGroupService.createOrderGroup(
-        userId,
-        productId,
-        tempStockIds,
-        quantity,
-        totalPaid,
-        tempMidtransOrderId // Pass ID immediately
-      );
-
-      console.log('✅ OrderGroup created:', orderGroup._id);
-
-      // ============ STEP 4: Now update with the actual OrderGroup MongoDB ID ============
-      const orderGroupId = orderGroup._id!.toString();
-      const midtransOrderId = orderGroupId; // Use MongoDB ID as final order ID
-
-      console.log('📝 Updating to final Midtrans Order ID:', midtransOrderId);
-      console.log('   Order ID length:', midtransOrderId.length, 'chars');
-
-      await OrderGroupService.updateMidtransOrderId(orderGroupId, midtransOrderId);
-
-      // ============ STEP 5: Create Midtrans transaction ============
+      // ============ STEP 3: Create Midtrans transaction WITHOUT creating OrderGroup ============
       const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
       if (!serverKey) {
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest) {
       console.log('💳 Creating Midtrans transaction...');
 
       const snapResponse = await MidtransService.createTransaction(
-        midtransOrderId, // Use OrderGroup's MongoDB ID (24 chars)
+        midtransOrderId,
         totalPaid,
         {
           first_name: userId,
@@ -132,9 +136,13 @@ export async function POST(request: NextRequest) {
           data: {
             token: snapResponse.token,
             redirectUrl: snapResponse.redirect_url,
-            orderGroupId: orderGroupId,
-            midtransOrderId: midtransOrderId,
+            // ✅ CHANGED: Return temp data instead of orderGroupId
+            tempMidtransOrderId: midtransOrderId,
+            tempStockIds: tempStockIds,
+            productId,
             quantity,
+            totalPaid,
+            userId,
           },
         },
         { status: 201 }

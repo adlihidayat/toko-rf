@@ -376,4 +376,102 @@ export class MidtransService {
       throw error;
     }
   }
+
+  /**
+   * Get Snap token for an existing transaction
+   * This retrieves the token for a transaction that's already been created in Midtrans
+   * Useful for resuming payments without creating a new transaction
+   * 
+   * @param orderId The existing Midtrans order ID
+   * @returns Snap token that can be used to reopen payment
+   */
+  static async getSnapToken(orderId: string): Promise<{ token: string }> {
+    try {
+      const serverKey = process.env.MIDTRANS_SERVER_KEY;
+
+      if (!serverKey) {
+        throw new Error('MIDTRANS_SERVER_KEY is not set');
+      }
+
+      const authString = createAuthString(serverKey);
+
+      // Get the existing transaction status first
+      const statusUrl = midtransConfig.isSandbox
+        ? `https://api.sandbox.midtrans.com/v2/${orderId}/status`
+        : `https://api.midtrans.com/v2/${orderId}/status`;
+
+      console.log('🔍 Fetching existing transaction:', orderId);
+
+      const statusResponse = await fetch(statusUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authString}`,
+        },
+      });
+
+      if (!statusResponse.ok) {
+        throw new Error(`Failed to fetch transaction status: ${statusResponse.status}`);
+      }
+
+      const transactionData = await statusResponse.json();
+
+      console.log('✅ Transaction found:', {
+        order_id: transactionData.order_id,
+        status: transactionData.transaction_status,
+      });
+
+      // Generate a new Snap token for this transaction
+      // The Snap token endpoint can create tokens for existing transactions
+      const snapTokenUrl = midtransConfig.isSandbox
+        ? `https://app.sandbox.midtrans.com/snap/v1/transactions/${orderId}/snap-token`
+        : `https://app.midtrans.com/snap/v1/transactions/${orderId}/snap-token`;
+
+      console.log('🔄 Requesting Snap token for order:', orderId);
+
+      const snapResponse = await fetch(snapTokenUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authString}`,
+        },
+      });
+
+      if (!snapResponse.ok) {
+        const errorText = await snapResponse.text();
+        console.warn('⚠️ Snap token endpoint returned:', snapResponse.status);
+        console.warn('   Response:', errorText);
+
+        // If snap-token endpoint doesn't work, fall back to creating a NEW token
+        // (some Midtrans setups don't have this endpoint)
+        console.log('📝 Falling back to recreating token via Snap endpoint');
+
+        return await this.createTransaction(
+          orderId,
+          transactionData.gross_amount,
+          {
+            first_name: transactionData.customer_details?.first_name || 'Customer',
+            email: transactionData.customer_details?.email || 'customer@example.com',
+            phone: transactionData.customer_details?.phone || '0',
+          }
+        );
+      }
+
+      const snapData = await snapResponse.json();
+
+      console.log('✅ Snap token retrieved:', {
+        tokenPreview: snapData.snap_token.substring(0, 20) + '...',
+      });
+
+      return {
+        token: snapData.snap_token,
+      };
+
+    } catch (error) {
+      console.error('❌ Error getting Snap token:', error);
+      throw error;
+    }
+  }
 }

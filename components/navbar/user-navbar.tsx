@@ -71,11 +71,6 @@ export function UserNavbar() {
   const displayName = user?.username || "User";
   const displayEmail = user?.email || "user@gmail.com";
 
-  const scrollToFooter = () => {
-    const footer = document.getElementById("footer");
-    footer?.scrollIntoView({ behavior: "smooth" });
-  };
-
   return (
     <nav className="fixed top-0 w-full border-b border-white/10 bg-black z-50">
       <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between">
@@ -104,12 +99,12 @@ export function UserNavbar() {
             >
               Products
             </Link>
-            <button
-              onClick={scrollToFooter}
-              className="text-[#a1a1a1] hover:text-[#ededed] transition cursor-pointer"
+            <Link
+              href="/history"
+              className="text-[#a1a1a1] hover:text-[#ededed] transition"
             >
-              Contact
-            </button>
+              History
+            </Link>
             <Link
               href="https://www.youtube.com/"
               className="text-[#a1a1a1] hover:text-[#ededed] transition"
@@ -207,16 +202,14 @@ export function UserNavbar() {
               Products
             </Link>
 
-            {/* Contact Link */}
-            <button
-              onClick={() => {
-                scrollToFooter();
-                closeMobileMenu();
-              }}
-              className="text-[#ededed] hover:text-[#52a8ff] transition font-medium text-lg border-b border-white/10 pb-4 text-left"
+            {/* history Link */}
+            <Link
+              href="/history"
+              onClick={closeMobileMenu}
+              className="text-[#ededed] hover:text-[#52a8ff] transition font-medium text-lg border-b border-white/10 pb-4"
             >
-              Contact
-            </button>
+              History
+            </Link>
 
             {/* User Info Section */}
             <div className="border-t border-white/10 pt-4 mt-4">
