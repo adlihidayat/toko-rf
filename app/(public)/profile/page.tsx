@@ -3,14 +3,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
   Pagination,
@@ -48,6 +40,14 @@ interface OrderGroupWithExpanded extends OrderGroupWithDetails {
   isExpanded?: boolean;
 }
 
+declare global {
+  interface Window {
+    snap?: {
+      pay: (token: string, options?: any) => void;
+    };
+  }
+}
+
 export default function UserProfilePage() {
   const [user, setUser] = useState<UserDocument | null>(null);
   const [orderGroups, setOrderGroups] = useState<OrderGroupWithExpanded[]>([]);
@@ -68,6 +68,7 @@ export default function UserProfilePage() {
     {}
   );
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [snapLoaded, setSnapLoaded] = useState(false);
   const ITEMS_PER_PAGE = 10;
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -80,6 +81,92 @@ export default function UserProfilePage() {
       ?.split("=")[1];
     setUserId(userIdCookie || null);
     console.log("UserId from cookie:", userIdCookie);
+  }, []);
+
+  // Load Midtrans Snap script on mount
+  useEffect(() => {
+    const loadSnapScript = () => {
+      console.log("📦 Attempting to load Midtrans Snap script...");
+
+      // Check if script is already loaded
+      if (window.snap) {
+        console.log("✅ Snap already loaded");
+        setSnapLoaded(true);
+        return;
+      }
+
+      // Check if script tag already exists
+      if (document.getElementById("midtrans-snap-script")) {
+        console.log("⏳ Snap script tag exists, waiting...");
+        const checkSnap = setInterval(() => {
+          if (window.snap) {
+            console.log("✅ Snap loaded via existing script");
+            setSnapLoaded(true);
+            clearInterval(checkSnap);
+          }
+        }, 100);
+
+        setTimeout(() => {
+          clearInterval(checkSnap);
+          if (!window.snap) {
+            console.error("❌ Snap script tag exists but snap not available");
+            setSnapLoaded(false);
+          }
+        }, 3000);
+
+        return;
+      }
+
+      // Create and load script
+      const script = document.createElement("script");
+      script.id = "midtrans-snap-script";
+      script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
+      script.setAttribute(
+        "data-client-key",
+        process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || ""
+      );
+      script.async = true;
+
+      script.onload = () => {
+        console.log("✅ Midtrans Snap script loaded successfully");
+        console.log("   window.snap available:", !!window.snap);
+
+        // Give Midtrans time to initialize
+        setTimeout(() => {
+          if (window.snap) {
+            console.log("✅ Snap is ready!");
+            setSnapLoaded(true);
+          } else {
+            console.warn("⚠️ Snap loaded but not ready yet, retrying...");
+            // Retry a few times
+            let retries = 3;
+            const checkInterval = setInterval(() => {
+              if (window.snap) {
+                console.log("✅ Snap is now ready!");
+                setSnapLoaded(true);
+                clearInterval(checkInterval);
+              } else if (retries-- <= 0) {
+                console.error("❌ Snap failed to initialize");
+                clearInterval(checkInterval);
+              }
+            }, 500);
+          }
+        }, 500);
+      };
+
+      script.onerror = () => {
+        console.error("❌ Failed to load Midtrans Snap script");
+        setSnapLoaded(false);
+      };
+
+      document.head.appendChild(script);
+    };
+
+    loadSnapScript();
+
+    return () => {
+      // Cleanup if needed
+    };
   }, []);
 
   // Fetch user data and order groups
@@ -128,7 +215,6 @@ export default function UserProfilePage() {
             orderGroupsData.data.orderGroups.length
           );
 
-          // Initialize orderGroups with expanded state
           const expandedOGs = orderGroupsData.data.orderGroups.map(
             (og: OrderGroupWithDetails) => ({
               ...og,
@@ -139,7 +225,6 @@ export default function UserProfilePage() {
           setOrderGroups(expandedOGs);
           setStats(orderGroupsData.data.stats);
 
-          // Initialize rating states
           const initialRatings: Record<string, number | null> = {};
           orderGroupsData.data.orderGroups.forEach(
             (og: OrderGroupWithDetails) => {
@@ -253,92 +338,127 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleCompletePayment = async (orderGroupId: string | undefined) => {
-    if (!orderGroupId) return;
+  const handleResumePayment = async (orderGroupId: string | undefined) => {
+    if (!orderGroupId || !userId) {
+      alert("Order ID or User ID not found");
+      return;
+    }
 
     try {
       setActionLoading((prev) => ({ ...prev, [orderGroupId]: true }));
-      console.log(
-        "💳 Verifying payment status from gateway for order group:",
-        orderGroupId
-      );
+      console.log("🔄 Resuming payment for order group:", orderGroupId);
 
-      // ============ STEP 1: Verify payment with Midtrans gateway ============
-      const verifyResponse = await fetch(
-        `/api/order-groups/${orderGroupId}/verify-payment`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-
-      const verifyData = await verifyResponse.json();
-
-      console.log("📊 Gateway verification response:", {
-        status: verifyResponse.status,
-        success: verifyData.success,
-        paymentStatus: verifyData.paymentStatus,
+      const resumeResponse = await fetch("/api/payment/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderGroupId,
+          userId,
+        }),
       });
 
-      // Handle different response statuses
-      if (verifyResponse.status === 402) {
-        // Payment still pending
-        console.warn("⏳ Payment is still pending on gateway");
-        alert(
-          "❌ Payment is still pending. Please complete the payment first."
-        );
+      const resumeData = await resumeResponse.json();
+
+      console.log("📊 Resume response:", {
+        status: resumeResponse.status,
+        success: resumeData.success,
+      });
+
+      if (!resumeResponse.ok) {
+        console.error("❌ Failed to resume payment:", resumeData.error);
+        alert(`❌ ${resumeData.error || "Failed to resume payment"}`);
         setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
         return;
       }
 
-      if (verifyResponse.status === 503) {
-        // Gateway unreachable but we might have local data
-        console.warn("⚠️ Cannot reach payment gateway - checking local status");
-        alert("⚠️ Cannot verify with payment gateway. Please try again.");
+      if (!resumeData.data?.token) {
+        console.error("❌ No payment token received");
+        alert("Failed to retrieve payment token");
         setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
         return;
       }
 
-      if (!verifyResponse.ok) {
-        // Payment failed or other error
-        console.error("❌ Payment verification failed:", verifyData.error);
-        alert(`❌ ${verifyData.error || "Failed to verify payment"}`);
+      console.log("✅ Payment token received");
+      console.log("   Token:", resumeData.data.token.substring(0, 20) + "...");
+      console.log("   Amount:", resumeData.data.amount);
 
-        // Update local state to show failed status
-        const updated = orderGroups.map((og) =>
-          og._id?.toString() === orderGroupId
-            ? { ...og, paymentStatus: "failed" as const }
-            : og
-        );
-        setOrderGroups(updated);
+      // Ensure Snap is loaded
+      if (!window.snap) {
+        console.error("❌ Midtrans Snap not available");
+        console.log("   Attempting to reload Snap script...");
 
-        setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
-        return;
+        // Wait a bit more and retry
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        if (!window.snap) {
+          alert(
+            "Payment system failed to load. Please refresh the page and try again."
+          );
+          setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+          return;
+        }
       }
 
-      // ============ STEP 2: Payment confirmed by gateway ============
-      console.log("✅ Gateway confirmed payment is complete");
+      console.log("🎯 Opening Snap popup to resume payment");
 
-      if (verifyData.data) {
-        // Update the order group in local state
-        const updated = orderGroups.map((og) =>
-          og._id?.toString() === orderGroupId
-            ? { ...og, ...verifyData.data, paymentStatus: "completed" as const }
-            : og
-        );
-        setOrderGroups(updated);
-      }
+      window.snap.pay(resumeData.data.token, {
+        onSuccess: async function (result: any) {
+          console.log("✅ Payment success from Midtrans:", result);
 
-      // ============ STEP 3: Refresh to get updated redeem codes ============
-      console.log("🔄 Refreshing order data...");
-      await fetchData();
+          try {
+            console.log("💳 Updating order status to completed...");
 
-      console.log("✅ Payment completed successfully!");
-      alert("✅ Payment confirmed! Your redeem codes are now available.");
+            const updateResponse = await fetch(
+              `/api/order-groups/${orderGroupId}`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  paymentStatus: "completed",
+                  midtransTransactionId: result.transaction_id,
+                }),
+              }
+            );
+
+            const updateData = await updateResponse.json();
+
+            if (!updateResponse.ok) {
+              console.warn(
+                "⚠️ Failed to update order status:",
+                updateData.error
+              );
+            } else {
+              console.log("✅ Order status updated to completed");
+            }
+          } catch (updateError) {
+            console.error("❌ Error updating order status:", updateError);
+          }
+
+          await fetchData();
+          alert("✅ Payment successful! Your redeem codes are now available.");
+          setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        },
+
+        onPending: function (result: any) {
+          console.log("⏳ Payment pending:", result);
+          alert("⏳ Payment is still pending. Please complete it.");
+          setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        },
+
+        onError: function (result: any) {
+          console.error("❌ Payment error:", result);
+          alert("❌ Payment failed. Please try again.");
+          setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        },
+
+        onClose: function () {
+          console.log("🚪 Payment popup closed by user");
+          setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
+        },
+      });
     } catch (error) {
-      console.error("❌ Failed to verify payment:", error);
-      alert("❌ Error verifying payment. Please try again.");
-    } finally {
+      console.error("❌ Failed to resume payment:", error);
+      alert("Error resuming payment. Please try again.");
       setActionLoading((prev) => ({ ...prev, [orderGroupId]: false }));
     }
   };
@@ -371,7 +491,6 @@ export default function UserProfilePage() {
       const { data } = await response.json();
       console.log("✅ Order group cancelled:", data);
 
-      // Update the order group in the list
       const updated = orderGroups.map((og) =>
         og._id?.toString() === orderGroupId
           ? { ...og, paymentStatus: "cancelled" as const }
@@ -379,7 +498,6 @@ export default function UserProfilePage() {
       );
       setOrderGroups(updated);
 
-      // Refresh data
       await fetchData();
     } catch (error) {
       console.error("❌ Failed to cancel order group:", error);
@@ -419,7 +537,6 @@ export default function UserProfilePage() {
         setUser(data);
         setIsEditing(false);
 
-        // Dispatch event to notify navbar
         window.dispatchEvent(new Event("profileUpdated"));
       }
     } catch (error) {
@@ -471,6 +588,16 @@ export default function UserProfilePage() {
         </Button>
       </div>
 
+      {/* Snap Loading Status */}
+      {!snapLoaded && (
+        <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+          <p className="text-yellow-300 text-sm">
+            ⏳ Loading payment system ({snapLoaded ? "Ready" : "Loading"})... If
+            this takes too long, try refreshing the page.
+          </p>
+        </div>
+      )}
+
       {/* User Information Card */}
       {user && (
         <div className="bg-stone-900/50 border border-white/10 rounded-lg p-6 mb-8">
@@ -490,7 +617,6 @@ export default function UserProfilePage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Username */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -510,7 +636,6 @@ export default function UserProfilePage() {
               )}
             </div>
 
-            {/* Email */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <Mail className="w-4 h-4" />
@@ -519,7 +644,6 @@ export default function UserProfilePage() {
               <p className="text-lg text-primary font-medium">{user.email}</p>
             </div>
 
-            {/* Phone Number */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <Phone className="w-4 h-4" />
@@ -540,7 +664,6 @@ export default function UserProfilePage() {
               )}
             </div>
 
-            {/* Join Date */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-primary flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
@@ -556,7 +679,6 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          {/* Edit Actions */}
           {isEditing && (
             <div className="flex gap-3 pt-6 border-t border-white/10 mt-6">
               <Button
@@ -660,7 +782,7 @@ export default function UserProfilePage() {
                   key={ogId}
                   className="border border-white/10 rounded-lg overflow-hidden hover:border-white/20 transition"
                 >
-                  {/* Order Header - Clickable Row */}
+                  {/* Order Header */}
                   <div
                     className="p-4 bg-stone-900/30 cursor-pointer hover:bg-stone-900/50 transition flex items-center justify-between"
                     onClick={() => handleToggleExpand(ogId)}
@@ -715,7 +837,6 @@ export default function UserProfilePage() {
                       </div>
                     </div>
 
-                    {/* Expand Icon */}
                     <div className="ml-4 flex-shrink-0">
                       {isExpanded ? (
                         <ChevronUp className="w-5 h-5 text-secondary" />
@@ -728,7 +849,7 @@ export default function UserProfilePage() {
                   {/* Expandable Content */}
                   {isExpanded && (
                     <div className="border-t border-white/10 p-4 bg-stone-950/50 space-y-4">
-                      {/* Mobile: Show total and date if not shown in header */}
+                      {/* Mobile: Show total and date */}
                       <div className="lg:hidden grid grid-cols-2 gap-4 pb-4 border-b border-white/10">
                         <div>
                           <p className="text-xs text-secondary mb-1">
@@ -750,14 +871,14 @@ export default function UserProfilePage() {
                         </div>
                       </div>
 
-                      {/* Redeem Codes - Only show if completed and has paid stocks */}
+                      {/* Redeem Codes */}
                       {orderGroup.paymentStatus === "completed" &&
                         paidStocks.length > 0 && (
                           <div>
                             <h4 className="text-sm font-semibold text-primary mb-3">
                               Redeem Codes ({paidStocks.length})
                             </h4>
-                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                            <div className="space-y-2 max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-stone-600 [&::-webkit-scrollbar-thumb]:rounded-full px-2">
                               {paidStocks.map((stock, idx) => (
                                 <div
                                   key={idx}
@@ -825,7 +946,7 @@ export default function UserProfilePage() {
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleCompletePayment(ogId);
+                                handleResumePayment(ogId);
                               }}
                               disabled={isActionLoading}
                               className="flex-1 h-9 text-xs sm:text-sm bg-primary text-black hover:bg-primary/70 gap-1"
@@ -835,7 +956,7 @@ export default function UserProfilePage() {
                               ) : (
                                 <CreditCard className="w-3 h-3" />
                               )}
-                              <span>Complete Payment</span>
+                              <span>Continue Payment</span>
                             </Button>
                             <Button
                               onClick={(e) => {

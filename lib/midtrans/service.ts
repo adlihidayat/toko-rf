@@ -38,6 +38,9 @@ export class MidtransService {
   /**
    * Create Snap transaction token
    */
+  // lib/midtrans/service.ts - ADD THIS TO YOUR EXISTING FILE
+  // Replace the createTransaction method with this improved version:
+
   static async createTransaction(
     orderId: string,
     grossAmount: number,
@@ -48,6 +51,7 @@ export class MidtransService {
       const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
       if (!serverKey) {
+        console.error('❌ MIDTRANS_SERVER_KEY is not set in environment variables');
         throw new Error('MIDTRANS_SERVER_KEY is not set');
       }
 
@@ -74,8 +78,11 @@ export class MidtransService {
         url: midtransConfig.apiUrl,
         orderId,
         grossAmount,
+        customerEmail: customerDetails.email,
         serverKey: serverKey.substring(0, 15) + '...',
       });
+
+      console.log('📤 Request body being sent:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(midtransConfig.apiUrl, {
         method: 'POST',
@@ -88,22 +95,60 @@ export class MidtransService {
       });
 
       console.log('📡 Midtrans API Response Status:', response.status);
+      console.log('📡 Response Headers:', {
+        contentType: response.headers.get('content-type'),
+        contentLength: response.headers.get('content-length'),
+      });
+
+      const responseText = await response.text();
+      console.log('📡 Response Body:', responseText);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('❌ Midtrans API Error Response:', errorData);
-        throw new Error(errorData.error_messages?.[0] || `Midtrans error: ${response.status}`);
+        let errorData;
+        try {
+          errorData = JSON.parse(responseText);
+        } catch {
+          errorData = { error_message: responseText };
+        }
+
+        console.error('❌ Midtrans API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        });
+
+        const errorMessage =
+          errorData.error_messages?.[0] ||
+          errorData.error_message ||
+          `Midtrans error: ${response.status} ${response.statusText}`;
+
+        throw new Error(errorMessage);
       }
 
-      const data: SnapTokenResponse = await response.json();
+      let data: SnapTokenResponse;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse Midtrans response:', parseError);
+        console.error('Response was:', responseText);
+        throw new Error('Invalid response from Midtrans API');
+      }
+
+      if (!data.token) {
+        console.error('❌ No token in Midtrans response:', data);
+        throw new Error('No token received from Midtrans');
+      }
+
       console.log('✅ Midtrans token created successfully:', {
         tokenPreview: data.token.substring(0, 20) + '...',
-        mode: MIDTRANS_MODE
+        mode: MIDTRANS_MODE,
+        redirectUrl: data.redirect_url,
       });
 
       return data;
     } catch (error) {
       console.error('❌ Midtrans transaction creation error:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       throw error;
     }
   }
