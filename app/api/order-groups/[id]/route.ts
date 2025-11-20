@@ -1,4 +1,4 @@
-// app/api/order-groups/[id]/route.ts - COMPLETE WITH PUT HANDLER
+// app/api/order-groups/[id]/route.ts - COMPLETE WITH SECURITY
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { StockService } from '@/lib/db/services/stocks';
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,6 +9,16 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+
+    // ============ SECURITY: Get user from auth header ============
+    const userId = request.headers.get('x-user-id');
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
     console.log('📍 Fetching order group:', id);
 
     const orderGroup = await OrderGroupService.getById(id);
@@ -18,6 +28,15 @@ export async function GET(
       return NextResponse.json(
         { success: false, error: 'Order group not found' },
         { status: 404 }
+      );
+    }
+
+    // ============ SECURITY: Verify user ownership ============
+    if (orderGroup.userId.toString() !== userId) {
+      console.warn(`🚫 Unauthorized order access: ${userId} -> ${id}`);
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
       );
     }
 

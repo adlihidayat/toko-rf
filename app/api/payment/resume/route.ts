@@ -1,14 +1,11 @@
-// app/api/payment/resume/route.ts - COMPLETE FIXED VERSION
-import { NextRequest, NextResponse } from 'next/server';
+// app/api/payment/resume/route.ts - UPDATED TO REUSE EXISTING TRANSACTION
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { MidtransService } from '@/lib/midtrans/service';
-import User from '@/lib/db/models/User';
-import connectDB from '@/lib/db/mongodb';
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { orderGroupId, userId } = body;
+    const { orderGroupId, userId } = await request.json();
 
     if (!orderGroupId || !userId) {
       return NextResponse.json(
@@ -19,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     console.log('🔄 Attempting to resume payment for order group:', orderGroupId);
 
-    // ============ STEP 1: Get the order group ============
+    // ============ GET EXISTING ORDER GROUP ============
     const orderGroup = await OrderGroupService.getById(orderGroupId);
 
     if (!orderGroup) {
@@ -30,120 +27,176 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ============ STEP 2: Verify ownership and payment status ============
+    console.log('✅ Order group found');
+    console.log('   Status:', orderGroup.paymentStatus);
+    console.log('   Midtrans Order ID:', orderGroup.midtransOrderId);
+
+    // ============ VALIDATE ORDER STATUS ============
+    if (orderGroup.paymentStatus !== 'pending') {
+      console.error(
+        `❌ Cannot resume payment for ${orderGroup.paymentStatus} order`
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot resume payment for ${orderGroup.paymentStatus} orders`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // ============ VALIDATE USER OWNERSHIP ============
     if (orderGroup.userId !== userId) {
-      console.error('❌ User is not the owner of this order group');
+      console.error('❌ User is not the owner of this order');
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 403 }
       );
     }
 
-    // Can only resume pending orders
-    if (orderGroup.paymentStatus !== 'pending') {
-      console.error(`❌ Cannot resume ${orderGroup.paymentStatus} order group`);
+    // ============ CHECK IF MIDTRANS ORDER ID EXISTS ============
+    if (!orderGroup.midtransOrderId) {
+      console.error('❌ No Midtrans order ID found for this order group');
       return NextResponse.json(
-        {
-          success: false,
-          error: `Cannot resume ${orderGroup.paymentStatus} orders. Status must be pending.`,
-        },
+        { success: false, error: 'Invalid order - missing Midtrans transaction' },
         { status: 400 }
       );
     }
 
-    // ============ STEP 3: Check if order has expired ============
-    if (orderGroup.expiresAt && new Date() > new Date(orderGroup.expiresAt)) {
-      console.error('⏰ Order group has expired');
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'This order has expired. Please create a new order.',
-        },
-        { status: 410 } // 410 Gone
-      );
-    }
+    console.log('🔍 Checking transaction status with Midtrans...');
 
-    console.log('✅ Order group validation passed');
-    console.log('   Midtrans Order ID:', orderGroup.midtransOrderId);
-    console.log('   Current status:', orderGroup.paymentStatus);
-
-    // ============ STEP 4: Fetch user details ============
-    await connectDB();
-    const user = await User.findById(userId).lean();
-
-    if (!user) {
-      console.error('❌ User not found:', userId);
-      return NextResponse.json(
-        { success: false, error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    console.log('✅ User found:', {
-      email: user.email,
-      username: user.username,
-      phone: user.phoneNumber,
-    });
-
-    // ============ STEP 5: Create new Snap token using the SAME order ID ============
     try {
-      console.log('🔑 Creating new Snap token for resuming payment...');
-      console.log('   Order ID:', orderGroup.midtransOrderId);
-      console.log('   Amount:', orderGroup.totalPaid);
-
-      const snapResponse = await MidtransService.createTransaction(
-        orderGroup.midtransOrderId, // ← REUSE the same order ID
-        orderGroup.totalPaid,
-        {
-          first_name: user.username || 'Customer',
-          email: user.email || 'noemail@example.com',
-          phone: user.phoneNumber?.replace(/\D/g, '') || '0000000000',
-        }
+      // ============ QUERY MIDTRANS FOR EXISTING TRANSACTION STATUS ============
+      const transactionStatus = await MidtransService.getTransactionStatus(
+        orderGroup.midtransOrderId
       );
 
-      console.log('✅ New Snap token created successfully');
-      console.log('   Token:', snapResponse.token.substring(0, 20) + '...');
+      console.log('📊 Transaction status from Midtrans:', {
+        transaction_status: transactionStatus.transaction_status,
+        fraud_status: transactionStatus.fraud_status,
+        status_code: transactionStatus.status_code,
+      });
+
+      // ============ PARSE TRANSACTION STATUS ============
+      const { status } = MidtransService.parseNotificationStatus(transactionStatus);
+
+      // If already completed on Midtrans, update our DB
+      if (status === 'completed') {
+        console.log('✅ Midtrans shows payment already completed');
+
+        const updated = await OrderGroupService.completePayment(
+          orderGroupId,
+          transactionStatus.transaction_id
+        );
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            token: 'already_completed',
+            amount: orderGroup.totalPaid,
+            status: 'completed',
+            message: 'Payment already completed on Midtrans',
+          },
+        });
+      }
+
+      // If failed or expired, return error
+      if (status === 'failed' || status === 'cancelled') {
+        console.log('❌ Transaction is in failed state on Midtrans');
+
+        // Update to failed
+        await OrderGroupService.failPayment(orderGroupId);
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Payment was not completed. Please try a new transaction.',
+            status: 'failed',
+          },
+          { status: 400 }
+        );
+      }
+
+      // ============ IF STILL PENDING, GET EXISTING SNAP TOKEN ============
+      console.log('⏳ Transaction still pending - retrieving existing Snap token');
+
+      // Get a fresh Snap token for the SAME transaction
+      const snapResponse = await MidtransService.getSnapToken(
+        orderGroup.midtransOrderId
+      );
+
+      console.log('✅ Snap token retrieved successfully');
+      console.log('   Token preview:', snapResponse.token.substring(0, 20) + '...');
 
       return NextResponse.json({
         success: true,
         data: {
           token: snapResponse.token,
-          orderGroupId: orderGroup._id,
-          midtransOrderId: orderGroup.midtransOrderId,
           amount: orderGroup.totalPaid,
-          status: orderGroup.paymentStatus,
+          orderGroupId,
+          message: 'Use the same payment link - no charges duplicated',
         },
-        message: 'Payment session resumed. Please complete the transaction.',
       });
+
     } catch (midtransError) {
-      console.error('❌ Failed to create Snap token:', midtransError);
-      console.error(
-        'Error details:',
-        midtransError instanceof Error ? midtransError.message : 'Unknown error'
-      );
+      console.error('❌ Error querying Midtrans:', midtransError);
 
-      let errorMessage = 'Failed to create payment token';
-      if (midtransError instanceof Error) {
-        if (midtransError.message.includes('MIDTRANS_SERVER_KEY')) {
-          errorMessage = 'Payment gateway not configured (missing MIDTRANS_SERVER_KEY)';
-        } else if (midtransError.message.includes('401')) {
-          errorMessage = 'Payment gateway authentication failed - check API keys';
-        } else if (midtransError.message.includes('400')) {
-          errorMessage = 'Invalid payment details - please contact support';
-        }
+      // If Midtrans is unreachable, create a NEW transaction as fallback
+      console.log('⚠️ Fallback: Creating new transaction since Midtrans query failed');
+
+      try {
+        // Create completely NEW order group with new Midtrans ID
+        const newMidtransOrderId = `${orderGroupId}-retry-${Date.now()}`;
+
+        console.log('🔄 Creating new OrderGroup with new Midtrans ID:', newMidtransOrderId);
+
+        // Create new snap token
+        const newSnapResponse = await MidtransService.createTransaction(
+          newMidtransOrderId,
+          orderGroup.totalPaid,
+          {
+            first_name: 'User',
+            email: 'user@example.com',
+            phone: '0',
+          }
+        );
+
+        // Update the original order group with new Midtrans ID
+        await OrderGroupService.updateMidtransOrderId(
+          orderGroupId,
+          newMidtransOrderId
+        );
+
+        console.log('✅ New transaction created as fallback');
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            token: newSnapResponse.token,
+            amount: orderGroup.totalPaid,
+            orderGroupId,
+            isNewTransaction: true,
+            message: 'New payment transaction created (Midtrans connection issue)',
+          },
+        });
+
+      } catch (fallbackError) {
+        console.error('❌ Fallback transaction creation also failed:', fallbackError);
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to retrieve payment gateway. Please try again later.',
+            details: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+          },
+          { status: 503 }
+        );
       }
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: errorMessage,
-          details: midtransError instanceof Error ? midtransError.message : 'Unknown error',
-        },
-        { status: 500 }
-      );
     }
+
   } catch (error) {
-    console.error('❌ Error resuming payment:', error);
+    console.error('❌ Payment resume error:', error);
+
     return NextResponse.json(
       {
         success: false,

@@ -1,6 +1,9 @@
-// app/api/order-groups/user/[userId]/route.ts - SECURE VERSION
+// ============================================================
+// FILE 3: app/api/order-groups/user/[userId]/route.ts
+// ============================================================
+// COMPLETE REPLACEMENT
+
 import { OrderGroupService } from '@/lib/db/services/order-group';
-import { StockService } from '@/lib/db/services/stocks';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
@@ -8,51 +11,49 @@ export async function GET(
   context: { params: Promise<{ userId: string }> }
 ) {
   try {
-    const { userId } = await context.params;
+    const { userId: paramUserId } = await context.params;
 
-    console.log('🔍 Fetching order groups for userId:', userId);
+    // ============ SECURITY: Verify user is requesting their own data ============
+    const authUserId = request.headers.get('x-user-id');
+    if (!authUserId || authUserId !== paramUserId) {
+      console.warn(`🚫 Unauthorized order list access: ${authUserId} -> ${paramUserId}`);
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
 
-    // Get raw order groups from database
-    const orderGroups = await OrderGroupService.getUserOrderGroups(userId);
+    console.log('🔍 Fetching order groups for userId:', paramUserId);
 
-    console.log('📦 Order groups found:', orderGroups.length);
+    const orderGroups = await OrderGroupService.getUserOrderGroups(paramUserId);
 
-    // ============ SECURITY: Filter out stocks and redeem codes for non-completed orders ============
-    const secureOrderGroups = orderGroups.map((og) => {
-      // Only include stocks if payment is completed
-      if (og.paymentStatus !== 'completed') {
-        console.log(`🔒 Hiding stocks for ${og._id} - status: ${og.paymentStatus}`);
+    // ============ SECURITY: Strip redeem codes and stocks from all orders ============
+    // Only return safe fields - redeem codes must be fetched from /redeem-codes endpoint
+    const safeOrderGroups = orderGroups.map((og) => ({
+      _id: og._id,
+      userId: og.userId,
+      productId: og.productId,
+      productName: og.productName,
+      productPrice: og.productPrice,
+      quantity: og.quantity,
+      totalPaid: og.totalPaid,
+      paymentStatus: og.paymentStatus,
+      rating: og.rating || null,
+      createdAt: og.createdAt,
+      reservedAt: og.reservedAt,
+      paidAt: og.paidAt,
+      expiresAt: og.expiresAt,
+      // Explicitly NOT including: redeemCodes, stocks
+    }));
 
-        return {
-          ...og,
-          stocks: [], // ← SECURITY: Don't send stocks for non-completed
-          redeemCodes: [], // ← SECURITY: Don't send redeem codes
-        };
-      }
+    const stats = await OrderGroupService.getUserStats(paramUserId);
 
-      // For completed orders, include all paid stocks
-      const paidStocks = (og.stocks || []).filter((s) => s.status === 'paid');
-
-      console.log(`✅ Including ${paidStocks.length} paid stocks for ${og._id}`);
-
-      return {
-        ...og,
-        stocks: paidStocks, // ← Only include paid stocks
-        redeemCodes: paidStocks.map((s) => s.redeemCode), // ← Only completed codes
-      };
-    });
-
-    console.log('📊 Order groups secured');
-
-    // Get stats (only counts completed anyway)
-    const stats = await OrderGroupService.getUserStats(userId);
-
-    console.log('📊 Stats calculated:', stats);
+    console.log(`📊 Returning ${safeOrderGroups.length} orders for user ${paramUserId}`);
 
     return NextResponse.json({
       success: true,
       data: {
-        orderGroups: secureOrderGroups,
+        orderGroups: safeOrderGroups,
         stats,
       },
     });

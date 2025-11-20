@@ -1,15 +1,37 @@
-// app/api/products/route.ts
+// ============================================================
+// FILE 5: app/api/products/route.ts - UPDATE GET for minimumPurchase
+// ============================================================
+// ONLY UPDATE THE GET HANDLER
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ProductService } from '@/lib/db/services/products';
+import { StockService } from '@/lib/db/services/stocks';
 
-// GET /api/products - Get all products
 export async function GET(request: NextRequest) {
   try {
     const products = await ProductService.getAllProducts();
 
+    // ✅ NEW: Get stock counts and check against minimumPurchase
+    const productsWithStockStatus = await Promise.all(
+      products.map(async (product) => {
+        const availableCount = await StockService.getAvailableStockCount(
+          product._id?.toString() || ''
+        );
+
+        // ✅ Changed: Out of stock = available < minimumPurchase
+        const isOutOfStock = availableCount < (product.minimumPurchase || 1);
+
+        return {
+          ...product,
+          availableStockCount: availableCount,
+          isOutOfStock,
+        };
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      data: products,
+      data: productsWithStockStatus,
     });
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -23,7 +45,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/products - Create a new product
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
