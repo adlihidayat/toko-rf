@@ -258,7 +258,7 @@ function CheckoutContent() {
             });
 
             setTimeout(() => {
-              router.push("/history?tab=history&payment=pending");
+              router.push("/history");
             }, 2000);
           },
 
