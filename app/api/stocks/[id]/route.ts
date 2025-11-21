@@ -1,5 +1,6 @@
-import { StockService } from "@/lib/db/services/stocks";
-import { NextRequest, NextResponse } from "next/server";
+import { StockService } from '@/lib/db/services/stocks';
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyAdminAccess } from '@/lib/utils/admin-auth';
 
 export async function GET(
   request: NextRequest,
@@ -7,6 +8,18 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
+
+    // ============ SECURITY: Verify admin access ============
+    if (!verifyAdminAccess(request)) {
+      console.warn(`🚫 Non-admin attempted to access stock ${id}`);
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
+
+    console.log(`✅ Admin accessing stock ${id}`);
+
     const stock = await StockService.getStockById(id);
 
     if (!stock) {
@@ -16,12 +29,10 @@ export async function GET(
       );
     }
 
-    // ============ SECURITY: Strip redeem code ============
-    const { redeemCode, ...safeStock } = stock;
-
-    return NextResponse.json({ success: true, data: safeStock });
+    // ✅ Return full stock data including redeem code to admin
+    return NextResponse.json({ success: true, data: stock });
   } catch (error) {
-    console.error('Error fetching stock:', error);
+    console.error('❌ Error fetching stock:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch stock' },
       { status: 500 }
@@ -35,15 +46,28 @@ export async function PUT(
 ) {
   try {
     const { id } = await context.params;
+
+    // ============ SECURITY: Verify admin access ============
+    if (!verifyAdminAccess(request)) {
+      console.warn(`🚫 Non-admin attempted to update stock ${id}`);
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
-    // ============ SECURITY: Prevent users from updating redeem codes ============
+    // ============ SECURITY: Prevent updating redeem codes ============
     if (body.redeemCode) {
+      console.warn(`🚫 Admin attempted to update redeem code for stock ${id}`);
       return NextResponse.json(
         { success: false, error: 'Cannot update redeem code' },
         { status: 403 }
       );
     }
+
+    console.log(`✅ Admin updating stock ${id}`);
 
     const stock = await StockService.updateStock(id, body);
 
@@ -54,12 +78,10 @@ export async function PUT(
       );
     }
 
-    // ============ SECURITY: Strip redeem code ============
-    const { redeemCode, ...safeStock } = stock;
-
-    return NextResponse.json({ success: true, data: safeStock });
+    // ✅ Return full stock data to admin
+    return NextResponse.json({ success: true, data: stock });
   } catch (error) {
-    console.error('Error updating stock:', error);
+    console.error('❌ Error updating stock:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to update stock' },
       { status: 500 }
@@ -73,6 +95,18 @@ export async function DELETE(
 ) {
   try {
     const { id } = await context.params;
+
+    // ============ SECURITY: Verify admin access ============
+    if (!verifyAdminAccess(request)) {
+      console.warn(`🚫 Non-admin attempted to delete stock ${id}`);
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 403 }
+      );
+    }
+
+    console.log(`✅ Admin deleting stock ${id}`);
+
     const deleted = await StockService.deleteStock(id);
 
     if (!deleted) {
@@ -84,7 +118,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, message: 'Stock deleted' });
   } catch (error) {
-    console.error('Error deleting stock:', error);
+    console.error('❌ Error deleting stock:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to delete stock' },
       { status: 500 }

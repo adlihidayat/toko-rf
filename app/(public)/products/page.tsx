@@ -115,7 +115,7 @@ export default function ProductsPage() {
         const [categoriesRes, productsRes, stocksRes] = await Promise.all([
           fetch("/api/categories"),
           fetch("/api/products"),
-          fetch("/api/stocks"),
+          fetch("/api/stocks/public"), // ✅ FIXED: Changed from /api/stocks to /api/stocks/public
         ]);
 
         const [categoriesData, productsData, stocksData] = await Promise.all([
@@ -134,12 +134,16 @@ export default function ProductsPage() {
 
           if (Array.isArray(stocksData.data)) {
             stocksData.data.forEach((stock: any) => {
-              if (stock.status === "available") {
-                availableStocksByProduct[stock.productId] =
-                  (availableStocksByProduct[stock.productId] || 0) + 1;
-              }
+              // ✅ Note: /api/stocks/public already filters for available status
+              // So we don't need to check stock.status === "available" again
+              availableStocksByProduct[stock.productId] =
+                (availableStocksByProduct[stock.productId] || 0) + 1;
             });
           }
+
+          console.log(
+            `📊 Loaded ${stocksData.data.length} available stocks from public endpoint`
+          );
 
           // Add available stock count to products
           const productsWithStock = productsData.data.map(

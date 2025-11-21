@@ -101,13 +101,27 @@ export default function ProductManagementPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true);
+
       const [productsRes, stocksRes, purchasesRes, categoriesRes] =
         await Promise.all([
           fetch("/api/products"),
-          fetch("/api/stocks"),
-          fetch("/api/purchase"),
+          fetch("/api/stocks"), // Admin auth required
+          fetch("/api/purchase"), // Now uses OrderGroup collection
           fetch("/api/categories"),
         ]);
+
+      // Handle auth errors
+      if (stocksRes.status === 403) {
+        console.error("❌ Admin access denied for stocks");
+        setLoading(false);
+        return;
+      }
+
+      if (purchasesRes.status === 403) {
+        console.error("❌ Admin access denied for purchases");
+        setLoading(false);
+        return;
+      }
 
       const productsData = await productsRes.json();
       const stocksData = await stocksRes.json();
@@ -116,22 +130,18 @@ export default function ProductManagementPage() {
 
       console.log("📦 Products:", productsData);
       console.log("📊 Stocks:", stocksData);
-      console.log("🛒 Purchases:", purchasesData);
+      console.log("🛒 Purchases (from OrderGroup):", purchasesData);
       console.log("📁 Categories:", categoriesData);
 
       if (productsData.success) setProducts(productsData.data);
       if (stocksData.success) setStocks(stocksData.data);
 
-      // Filter purchases to show only completed ones
+      // purchasesData now comes from OrderGroup collection
       if (purchasesData.success) {
-        const completedPurchases = purchasesData.data.filter(
-          (p: PurchaseWithDetails) => p.paymentStatus === "completed"
-        );
         console.log(
-          "📋 Filtered completed purchases:",
-          completedPurchases.length
+          `📋 Loaded ${purchasesData.data.length} completed purchases from OrderGroup`
         );
-        setPurchases(completedPurchases);
+        setPurchases(purchasesData.data);
       }
 
       if (categoriesData.success) setCategories(categoriesData.data);
@@ -755,7 +765,9 @@ export default function ProductManagementPage() {
                     <TableHead className="text-primary w-96">
                       <SortButton field="name" label="Product" />
                     </TableHead>
-                    <TableHead className="text-primary">Redeem Code</TableHead>
+                    <TableHead className="text-primary w-60">
+                      Redeem Code
+                    </TableHead>
                     <TableHead className="text-primary">
                       <SortButton field="date" label="Added Date" />
                     </TableHead>
@@ -776,6 +788,7 @@ export default function ProductManagementPage() {
                       Redeem Code
                     </TableHead>
                     <TableHead className="text-primary">Amount</TableHead>
+                    <TableHead className="text-primary">total paid</TableHead>
                     <TableHead className="text-primary">Rating</TableHead>
                     <TableHead className="text-primary">
                       <SortButton field="date" label="Date" />
@@ -797,7 +810,8 @@ export default function ProductManagementPage() {
               {viewMode === "products"
                 ? (paginatedData as ProductDocument[]).map((product) => {
                     const stockCount = stocks.filter(
-                      (s) => s.productId === product._id
+                      (s) =>
+                        s.productId === product._id && s.status === "available"
                     ).length;
                     const productPurchases = purchases.filter(
                       (p) => p.productId === product._id && p.rating !== null
@@ -977,6 +991,10 @@ export default function ProductManagementPage() {
                       </TableCell>
                       <TableCell className="text-secondary">
                         {purchase.redeemCode}
+                      </TableCell>
+                      <TableCell className="text-primary">
+                        {purchase.quantity} item
+                        {purchase.quantity > 1 ? "s" : ""}
                       </TableCell>
                       <TableCell className="text-primary">
                         Rp {purchase.totalPaid.toLocaleString("id-ID")}

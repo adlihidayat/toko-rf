@@ -253,6 +253,7 @@ export default function OrderHistoryPage() {
       (og) => og._id?.toString() === orderGroupId
     );
 
+    // If already expanded, just collapse
     if (orderGroup?.isExpanded) {
       setOrderGroups((prev) =>
         prev.map((og) => {
@@ -265,32 +266,70 @@ export default function OrderHistoryPage() {
       return;
     }
 
+    // ✅ ONLY for completed orders AND codes not yet loaded
     if (
       orderGroup?.paymentStatus === "completed" &&
       !orderGroup?.redeemCodes?.length
     ) {
       try {
-        console.log("🔐 Fetching redeem codes for order:", orderGroupId);
+        console.log(
+          `🔐 Securely fetching redeem codes for order: ${orderGroupId}`
+        );
 
         const response = await fetchWithAuth(
           `/api/order-groups/${orderGroupId}/redeem-codes`,
-          { method: "GET" }
+          {
+            method: "GET",
+            // fetchWithAuth handles x-user-id header automatically
+          }
         );
 
         const data = await response.json();
 
-        if (!response.ok) {
-          console.warn("Failed to fetch redeem codes:", data.error);
-          setOrderGroups((prev) =>
-            prev.map((og) => {
-              if (og._id?.toString() === orderGroupId) {
-                return { ...og, isExpanded: true } as OrderGroupWithExpanded;
-              }
-              return og;
-            })
-          );
+        // ✅ Handle payment not completed (402)
+        if (response.status === 402) {
+          console.warn("⚠️ Payment status changed:", data.error);
+
+          setErrorDialog({
+            open: true,
+            title: "Payment Status Changed",
+            description:
+              data.error || "Cannot access redeem codes - payment incomplete",
+          });
+
+          // Refresh status
+          await refetch();
           return;
         }
+
+        // ✅ Handle unauthorized (404)
+        if (response.status === 404) {
+          console.error("❌ Order not accessible");
+
+          setErrorDialog({
+            open: true,
+            title: "Not Found",
+            description: "This order is not accessible",
+          });
+          return;
+        }
+
+        // ✅ Handle server error
+        if (!response.ok) {
+          console.error("❌ Failed to fetch redeem codes:", data.error);
+
+          setErrorDialog({
+            open: true,
+            title: "Error",
+            description: data.error || "Failed to load redeem codes",
+          });
+          return;
+        }
+
+        // ✅ Success - load codes securely
+        console.log(
+          `✅ Successfully loaded ${data.data.redeemCodes.length} redeem codes`
+        );
 
         setOrderGroups((prev) =>
           prev.map((og) => {
@@ -304,17 +343,17 @@ export default function OrderHistoryPage() {
             return og;
           })
         );
-
-        console.log("✅ Redeem codes fetched securely");
       } catch (error) {
-        console.error("Error fetching redeem codes:", error);
+        console.error("❌ Network error fetching redeem codes:", error);
+
         setErrorDialog({
           open: true,
           title: "Error",
-          description: "Failed to fetch redeem codes",
+          description: "Failed to fetch redeem codes - check your connection",
         });
       }
     } else {
+      // For pending orders or already expanded - just toggle
       setOrderGroups((prev) =>
         prev.map((og) => {
           if (og._id?.toString() === orderGroupId) {
@@ -941,53 +980,65 @@ export default function OrderHistoryPage() {
                       </div>
 
                       {/* ============ REDEEM CODES (For Completed Orders) ============ */}
-                      {orderGroup.paymentStatus === "completed" &&
-                        paidStocks.length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-semibold text-primary mb-3">
-                              Redeem Codes ({paidStocks.length})
-                            </h4>
-                            <div className="space-y-2 max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-stone-600 [&::-webkit-scrollbar-thumb]:rounded-full px-2">
-                              {paidStocks.map((stock, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center justify-between bg-stone-800/30 border border-white/10 rounded p-3 hover:border-white/20 transition"
-                                >
-                                  <code className="text-xs sm:text-sm text-primary font-mono break-all">
-                                    {stock.redeemCode}
-                                  </code>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleCopyRedeemCode(
-                                        stock.redeemCode,
-                                        `${ogId}-${idx}`
-                                      );
-                                    }}
-                                    className="flex items-center gap-1 px-2 sm:px-3 py-1 rounded hover:bg-white/10 transition text-xs shrink-0 ml-2"
-                                    title="Copy redeem code"
-                                  >
-                                    {copiedId === `${ogId}-${idx}` ? (
-                                      <>
-                                        <Check className="w-3 h-3 sm:w-4 sm:h-4 text-green-400" />
-                                        <span className="text-green-400 hidden sm:inline">
-                                          Copied
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-secondary" />
-                                        <span className="text-secondary hidden sm:inline">
-                                          Copy
-                                        </span>
-                                      </>
-                                    )}
-                                  </button>
-                                </div>
-                              ))}
+                      {orderGroup.paymentStatus === "completed" && (
+                        <>
+                          {orderGroup.redeemCodes &&
+                          orderGroup.redeemCodes.length > 0 ? (
+                            <div>
+                              <h4 className="text-sm font-semibold text-primary mb-3">
+                                Redeem Codes ({orderGroup.redeemCodes.length})
+                              </h4>
+                              <div className="space-y-2 max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-stone-600 [&::-webkit-scrollbar-thumb]:rounded-full px-2">
+                                {orderGroup.redeemCodes.map(
+                                  (code: string, idx: number) => (
+                                    <div
+                                      key={idx}
+                                      className="flex items-center justify-between bg-stone-800/30 border border-white/10 rounded p-3 hover:border-white/20 transition"
+                                    >
+                                      <code className="text-xs sm:text-sm text-primary font-mono break-all">
+                                        {code}
+                                      </code>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCopyRedeemCode(
+                                            code,
+                                            `${ogId}-${idx}`
+                                          );
+                                        }}
+                                        className="flex items-center gap-1 px-2 sm:px-3 py-1 rounded hover:bg-white/10 transition text-xs shrink-0 ml-2"
+                                        title="Copy redeem code"
+                                      >
+                                        {copiedId === `${ogId}-${idx}` ? (
+                                          <>
+                                            <Check className="w-3 h-3 sm:w-4 sm:h-4 text-green-400" />
+                                            <span className="text-green-400 hidden sm:inline">
+                                              Copied
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy className="w-3 h-3 sm:w-4 sm:h-4 text-secondary" />
+                                            <span className="text-secondary hidden sm:inline">
+                                              Copy
+                                            </span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          ) : (
+                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-3">
+                              <p className="text-xs sm:text-sm text-yellow-300">
+                                ⏳ Loading redeem codes...
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       {/* ============ STATUS MESSAGES ============ */}
                       {orderGroup.paymentStatus === "pending" && (
