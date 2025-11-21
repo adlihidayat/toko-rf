@@ -1,7 +1,7 @@
 import { StockService } from "@/lib/db/services/stocks";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET_BY_ID(
+export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -29,7 +29,7 @@ export async function GET_BY_ID(
   }
 }
 
-export async function PUT_BY_ID(
+export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -67,7 +67,7 @@ export async function PUT_BY_ID(
   }
 }
 
-export async function DELETE_BY_ID(
+export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {

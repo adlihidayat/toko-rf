@@ -1,4 +1,4 @@
-// app/api/payment/create/route.ts
+// app/api/payment/create/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
 import { StockService } from '@/lib/db/services/stocks';
 import { MidtransService } from '@/lib/midtrans/service';
@@ -71,14 +71,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ============ STEP 1: Reserve and pick random stocks ============
-    let reservedStocks: any[] = [];
-    const tempStockIds: string[] = [];
-
     try {
-      console.log('🔒 Reserving stocks atomically...');
+      // ============ STEP 1: Pick random stocks but DON'T mark as pending yet ============
+      console.log('🔒 Reserving stocks temporarily...');
 
-      reservedStocks = await StockService.pickRandomAvailableStocks(
+      // This picks stocks but marks them as 'pending' temporarily
+      // They'll be officially tied to OrderGroup in /confirm endpoint
+      const reservedStocks = await StockService.pickRandomAvailableStocks(
         productId,
         quantity,
         []
@@ -90,18 +89,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      tempStockIds.push(...reservedStocks.map((s) => s._id.toString()));
-      console.log('✅ Stocks reserved:', tempStockIds);
+      const tempStockIds = reservedStocks.map((s) => s._id.toString());
+      console.log('✅ Stocks temporarily reserved:', tempStockIds);
 
-      // ============ STEP 2: Generate Midtrans Order ID ============
-      // ✅ CHANGED: Just return a temporary ID, don't create OrderGroup yet
+      // ============ STEP 2: Generate temporary Midtrans Order ID ============
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(2, 8);
-      const midtransOrderId = `temp_${timestamp}_${random}`;
+      const tempMidtransOrderId = `temp_${timestamp}_${random}`;
 
-      console.log('📝 Generated temporary Midtrans Order ID:', midtransOrderId);
+      console.log('📝 Generated temporary Midtrans Order ID:', tempMidtransOrderId);
 
-      // ============ STEP 3: Create Midtrans transaction WITHOUT creating OrderGroup ============
+      // ============ STEP 3: Create Midtrans transaction ============
       const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
       if (!serverKey) {
@@ -111,7 +109,7 @@ export async function POST(request: NextRequest) {
       console.log('💳 Creating Midtrans transaction...');
 
       const snapResponse = await MidtransService.createTransaction(
-        midtransOrderId,
+        tempMidtransOrderId,
         totalPaid,
         {
           first_name: userId,
@@ -136,8 +134,7 @@ export async function POST(request: NextRequest) {
           data: {
             token: snapResponse.token,
             redirectUrl: snapResponse.redirect_url,
-            // ✅ CHANGED: Return temp data instead of orderGroupId
-            tempMidtransOrderId: midtransOrderId,
+            tempMidtransOrderId: tempMidtransOrderId,
             tempStockIds: tempStockIds,
             productId,
             quantity,
@@ -151,9 +148,20 @@ export async function POST(request: NextRequest) {
       // ============ ROLLBACK: Release reserved stocks ============
       console.error('❌ Reservation/Transaction failed:', reservationError);
 
-      for (const stockId of tempStockIds) {
+      // Get the stocks we tried to reserve and release them
+      const availableStocks = await StockService.getStocksByStatus(
+        productId,
+        'pending'
+      );
+
+      const recentPendingStocks = availableStocks.filter(
+        (s) => s.reservedAt &&
+          new Date(s.reservedAt).getTime() > Date.now() - 5000 // Within last 5 seconds
+      );
+
+      for (const stock of recentPendingStocks) {
         try {
-          await StockService.markStockAsAvailable(stockId);
+          await StockService.markStockAsAvailable(stock._id?.toString() || '');
         } catch (releaseError) {
           console.error('Stock release error:', releaseError);
         }

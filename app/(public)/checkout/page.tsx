@@ -176,7 +176,6 @@ function CheckoutContent() {
             console.log("✅ Payment success from Midtrans:", result);
 
             try {
-              // ✅ Step 2: NOW create the OrderGroup because payment succeeded
               const confirmResponse = await fetchWithAuth(
                 `/api/payment/confirm`,
                 {
@@ -189,7 +188,7 @@ function CheckoutContent() {
                     totalPaid: data.totalPaid,
                     userId: data.userId,
                     midtransTransactionId: result.transaction_id,
-                    paymentStatus: "completed", // ✅ Payment succeeded
+                    paymentStatus: "completed",
                   }),
                 }
               );
@@ -218,7 +217,6 @@ function CheckoutContent() {
           onPending: function (result: any) {
             console.log("⏳ Payment pending:", result);
 
-            // ✅ Step 2: Create OrderGroup with pending status
             const confirmPending = async () => {
               try {
                 const confirmResponse = await fetchWithAuth(
@@ -233,7 +231,7 @@ function CheckoutContent() {
                       totalPaid: data.totalPaid,
                       userId: data.userId,
                       midtransTransactionId: result.transaction_id,
-                      paymentStatus: "pending", // ✅ Payment pending
+                      paymentStatus: "pending", // ✅ Stocks go to PENDING now
                     }),
                   }
                 );
@@ -241,7 +239,9 @@ function CheckoutContent() {
                 if (!confirmResponse.ok) {
                   console.warn("⚠️ Failed to create pending order");
                 } else {
-                  console.log("✅ Order created with pending status");
+                  console.log(
+                    "✅ Order created with pending status - stocks reserved"
+                  );
                 }
               } catch (error) {
                 console.error("❌ Error creating pending order:", error);
@@ -264,26 +264,54 @@ function CheckoutContent() {
 
           onError: function (result: any) {
             console.error("❌ Payment error:", result);
+
+            // ============ RELEASE STOCKS ON ERROR ============
+            releaseReservedStocks(data.tempStockIds);
+
             setDialog({
               type: "error",
               title: "Payment Failed",
-              description: "Payment failed. Please try again.",
+              description: "Payment failed. Stocks have been released.",
             });
             setProcessing(false);
-            // ✅ NO OrderGroup created on error - stocks are released
           },
 
           onClose: function () {
             console.log("🚪 Payment popup closed by user");
+
+            // ============ RELEASE STOCKS ON CANCEL ============
+            releaseReservedStocks(data.tempStockIds);
+
             setProcessing(false);
             setDialog({
               type: "error",
               title: "Payment Cancelled",
               description: "Payment was cancelled. Stocks have been released.",
             });
-            // ✅ NO OrderGroup created on close - stocks are released
           },
         });
+
+        // Add this helper function inside CheckoutContent component:
+        const releaseReservedStocks = async (stockIds: string[]) => {
+          console.log("🔄 Releasing reserved stocks:", stockIds);
+
+          try {
+            // Call API endpoint to release stocks
+            const response = await fetch("/api/stocks/release", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ stockIds }),
+            });
+
+            if (response.ok) {
+              console.log("✅ Stocks released successfully");
+            } else {
+              console.warn("⚠️ Failed to release stocks via API");
+            }
+          } catch (error) {
+            console.error("❌ Error releasing stocks:", error);
+          }
+        };
       } else {
         console.error("❌ Snap not available");
         setDialog({

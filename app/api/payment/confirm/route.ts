@@ -1,4 +1,4 @@
-// /api/payment/confirm/route.ts
+// app/api/payment/confirm/route.ts - FIXED STOCK HANDLING
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { StockService } from '@/lib/db/services/stocks';
@@ -23,18 +23,18 @@ export async function POST(request: NextRequest) {
       stockCount: tempStockIds.length,
     });
 
-    // ============ STEP 1: Create OrderGroup with final Midtrans Order ID ============
+    // ============ STEP 1: Create OrderGroup ============
     const orderGroup = await OrderGroupService.createOrderGroup(
       userId,
       productId,
       tempStockIds,
       quantity,
       totalPaid,
-      tempMidtransOrderId // Use the temp ID
+      tempMidtransOrderId
     );
 
     const orderGroupId = orderGroup._id!.toString();
-    const finalMidtransOrderId = orderGroupId; // Use MongoDB ID as final
+    const finalMidtransOrderId = orderGroupId;
 
     console.log('✅ OrderGroup created:', orderGroupId);
 
@@ -46,16 +46,21 @@ export async function POST(request: NextRequest) {
 
     console.log('📝 Updated to final Midtrans Order ID:', finalMidtransOrderId);
 
-    // ============ STEP 3: Update payment status ============
+    // ============ STEP 3: Handle stock status based on payment status ============
     if (paymentStatus === 'completed') {
-      console.log('💳 Completing payment for order group:', orderGroupId);
+      console.log('💳 Payment completed - marking stocks as PAID:', orderGroupId);
+
+      // Mark all stocks as PAID (payment confirmed)
+      for (const stockId of tempStockIds) {
+        await StockService.markStockAsPaid(stockId, orderGroupId);
+      }
 
       const updatedOrderGroup = await OrderGroupService.completePayment(
         orderGroupId,
         midtransTransactionId || `auto-${Date.now()}`
       );
 
-      console.log('✅ Payment completed');
+      console.log('✅ Payment completed and stocks marked as paid');
 
       return NextResponse.json({
         success: true,
@@ -63,8 +68,13 @@ export async function POST(request: NextRequest) {
         message: 'Order created and payment completed',
         paymentStatus: 'completed',
       });
-    } else if (paymentStatus === 'pending') {
-      console.log('⏳ Payment pending for order group:', orderGroupId);
+    }
+    else if (paymentStatus === 'pending') {
+      console.log('⏳ Payment pending - stocks already reserved via OrderGroup:', orderGroupId);
+
+      // NOTE: Stocks are ALREADY marked as 'pending' in OrderGroupService.createOrderGroup
+      // via the Stock.updateMany call. They are linked to this orderGroupId.
+      // Do NOT release them here - they should stay pending until payment completes or fails
 
       const pendingOrderGroup = await OrderGroupService.updatePaymentStatus(
         orderGroupId,
@@ -76,7 +86,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: pendingOrderGroup,
-        message: 'Order created - payment pending',
+        message: 'Order created - payment pending. Stocks reserved.',
         paymentStatus: 'pending',
       });
     }
@@ -87,6 +97,25 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('❌ Error confirming payment:', error);
+
+    // ============ ROLLBACK: Release stocks on error ============
+    try {
+      const body = await request.json();
+      if (body.tempStockIds && body.tempStockIds.length > 0) {
+        console.log('🔄 Rolling back - releasing stocks...');
+        for (const stockId of body.tempStockIds) {
+          try {
+            await StockService.markStockAsAvailable(stockId);
+          } catch (releaseError) {
+            console.error('Stock release error:', releaseError);
+          }
+        }
+        console.log('✅ Stocks released');
+      }
+    } catch (parseError) {
+      console.error('Error parsing request body for rollback:', parseError);
+    }
+
     return NextResponse.json(
       {
         success: false,
