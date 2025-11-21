@@ -1,8 +1,10 @@
-// app/api/payment/resume/route.ts - FULLY FIXED VERSION
+// app/api/payment/resume/route.ts - COMPLETE WITH REAL USER DATA
 
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { MidtransService } from '@/lib/midtrans/service';
+import connectDB from '@/lib/db/mongodb';
+import User from '@/lib/db/models/User';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,6 +24,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // ============ FETCH USER DATA FROM DATABASE ============
+    await connectDB();
+
+    const user = await User.findById(userId)
+      .select('username email phoneNumber')
+      .lean();
+
+    if (!user) {
+      console.error('❌ User not found:', userId);
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('✅ User data fetched for resume:', {
+      username: user.username,
+      email: user.email,
+      phone: user.phoneNumber,
+    });
 
     // ============ STEP 1: Fetch the pending order ============
     console.log('📍 Fetching order by orderGroupId:', orderGroupId);
@@ -138,14 +161,19 @@ export async function POST(request: NextRequest) {
       console.log('⚠️ No valid stored Snap token, creating new one from Midtrans...');
 
       try {
+        // ✅ FIX: Use real user data instead of dummy data
+        const customerDetails = {
+          first_name: user.username,
+          email: user.email,
+          phone: user.phoneNumber,
+        };
+
+        console.log('👤 Creating new token with real customer details:', customerDetails);
+
         const newTokenResponse = await MidtransService.createTransaction(
           orderGroup.midtransOrderId,
           orderGroup.totalPaid,
-          {
-            first_name: 'Customer',
-            email: 'customer@example.com',
-            phone: '08123456789',
-          }
+          customerDetails // ✅ Pass real user data
         );
 
         snapToken = newTokenResponse.token;
