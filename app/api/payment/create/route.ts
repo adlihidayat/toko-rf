@@ -1,8 +1,10 @@
-// app/api/payment/create/route.ts - UPDATED
+// app/api/payment/create/route.ts - COMPLETE WITH REAL USER DATA
 import { NextRequest, NextResponse } from 'next/server';
 import { StockService } from '@/lib/db/services/stocks';
 import { MidtransService } from '@/lib/midtrans/service';
 import { ProductService } from '@/lib/db/services/products';
+import connectDB from '@/lib/db/mongodb';
+import User from '@/lib/db/models/User';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,6 +25,27 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // ============ FETCH USER DATA FROM DATABASE ============
+    await connectDB();
+
+    const user = await User.findById(userId)
+      .select('username email phoneNumber')
+      .lean();
+
+    if (!user) {
+      console.error('❌ User not found:', userId);
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('✅ User data fetched:', {
+      username: user.username,
+      email: user.email,
+      phone: user.phoneNumber,
+    });
 
     // ============ FETCH PRODUCT DATA ============
     const product = await ProductService.getProductById(productId);
@@ -99,34 +122,39 @@ export async function POST(request: NextRequest) {
 
       console.log('📝 Generated temporary Midtrans Order ID:', tempMidtransOrderId);
 
-      // ============ STEP 3: Create Midtrans transaction ============
+      // ============ STEP 3: Create Midtrans transaction with REAL USER DATA ============
       const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
       if (!serverKey) {
         throw new Error('MIDTRANS_SERVER_KEY is missing');
       }
 
-      console.log('💳 Creating Midtrans transaction...');
+      console.log('💳 Creating Midtrans transaction with real user data...');
+
+      // ✅ FIX: Use real user data instead of dummy data
+      const customerDetails = {
+        first_name: user.username,
+        email: user.email,
+        phone: user.phoneNumber,
+      };
+
+      console.log('👤 Customer details for Midtrans:', customerDetails);
 
       const snapResponse = await MidtransService.createTransaction(
         tempMidtransOrderId,
         totalPaid,
-        {
-          first_name: userId,
-          email: 'customer@example.com',
-          phone: '08123456789',
-        },
+        customerDetails, // ✅ Pass real user data
         [
           {
             id: productId,
             price: Math.round(totalPaid / quantity),
             quantity: quantity,
-            name: `Product Purchase x${quantity}`,
+            name: `${product.name} x${quantity}`,
           },
         ]
       );
 
-      console.log('✅ Midtrans token created');
+      console.log('✅ Midtrans token created with real user data');
 
       return NextResponse.json(
         {
