@@ -11,7 +11,7 @@ export function middleware(request: NextRequest) {
   // Define route patterns
   const authRoutes = ["/login", "/signup"];
   const adminRoutes = ["/admin"];
-  const protectedRoutes = ["/profile", "/history"];
+  const protectedRoutes = ["/profile", "/history", "/products", "/checkout"];
 
   // Check if current path matches any pattern
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
