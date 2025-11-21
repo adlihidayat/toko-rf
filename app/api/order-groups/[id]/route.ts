@@ -82,7 +82,7 @@ export async function PUT(
 
         // Mark all stocks as PAID
         if (orderGroup.stockIds && orderGroup.stockIds.length > 0) {
-          await StockService.markStockAsPaid(orderGroup.stockIds[0], id);
+          await StockService.markStockAsPaid(orderGroup.stockIds[0].toString(), id);
           console.log('✅ Stocks marked as paid');
         }
 
@@ -106,7 +106,7 @@ export async function PUT(
         // Release all stocks back to available
         if (orderGroup.stockIds && orderGroup.stockIds.length > 0) {
           for (const stockId of orderGroup.stockIds) {
-            await StockService.markStockAsAvailable(stockId);
+            await StockService.markStockAsAvailable(stockId.toString());
           }
           console.log('✅ All stocks released to available');
         }

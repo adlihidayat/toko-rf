@@ -1,11 +1,20 @@
-// app/api/payment/resume/route.ts - UPDATED TO REUSE EXISTING TRANSACTION
+// app/api/payment/resume/route.ts - FULLY FIXED VERSION
+
+import { NextRequest, NextResponse } from 'next/server';
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { MidtransService } from '@/lib/midtrans/service';
-import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { orderGroupId, userId } = await request.json();
+    const body = await request.json();
+
+    console.log('🔄 Resume payment request:', {
+      productId: body.productId,
+      orderGroupId: body.orderGroupId,
+      userId: body.userId,
+    });
+
+    const { orderGroupId, userId } = body;
 
     if (!orderGroupId || !userId) {
       return NextResponse.json(
@@ -14,189 +23,172 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('🔄 Attempting to resume payment for order group:', orderGroupId);
+    // ============ STEP 1: Fetch the pending order ============
+    console.log('📍 Fetching order by orderGroupId:', orderGroupId);
 
-    // ============ GET EXISTING ORDER GROUP ============
-    const orderGroup = await OrderGroupService.getById(orderGroupId);
+    // ✅ FIX: Use findById WITHOUT .lean() to get full document with all fields
+    const OrderGroup = (await import('@/lib/db/models/OrderGroup')).default;
+    const rawOrderGroup = await OrderGroup.findById(orderGroupId);
 
-    if (!orderGroup) {
-      console.error('❌ Order group not found:', orderGroupId);
+    if (!rawOrderGroup) {
+      console.error('❌ Order not found:', orderGroupId);
       return NextResponse.json(
-        { success: false, error: 'Order group not found' },
+        { success: false, error: 'Order not found' },
         { status: 404 }
       );
     }
 
-    console.log('✅ Order group found');
-    console.log('   Status:', orderGroup.paymentStatus);
-    console.log('   Midtrans Order ID:', orderGroup.midtransOrderId);
+    // Convert to plain object for safety
+    const orderGroup = rawOrderGroup.toObject();
 
-    // ============ VALIDATE ORDER STATUS ============
-    if (orderGroup.paymentStatus !== 'pending') {
-      console.error(
-        `❌ Cannot resume payment for ${orderGroup.paymentStatus} order`
-      );
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Cannot resume payment for ${orderGroup.paymentStatus} orders`,
-        },
-        { status: 400 }
-      );
-    }
+    console.log('📋 DEBUG - Full order object:', {
+      id: orderGroup._id,
+      midtransOrderId: orderGroup.midtransOrderId,
+      snapToken: orderGroup.snapToken,
+      snapTokenType: typeof orderGroup.snapToken,
+      snapTokenLength: orderGroup.snapToken?.length,
+      allFields: Object.keys(orderGroup),
+    });
 
-    // ============ VALIDATE USER OWNERSHIP ============
-    if (orderGroup.userId !== userId) {
-      console.error('❌ User is not the owner of this order');
+    // Verify ownership
+    if (orderGroup.userId.toString() !== userId) {
+      console.warn('🚫 Unauthorized access to order:', orderGroupId);
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 403 }
       );
     }
 
-    // ============ CHECK IF MIDTRANS ORDER ID EXISTS ============
-    if (!orderGroup.midtransOrderId) {
-      console.error('❌ No Midtrans order ID found for this order group');
+    console.log('✅ Found pending order:', {
+      orderId: orderGroup._id,
+      midtransOrderId: orderGroup.midtransOrderId,
+      expiresAt: orderGroup.expiresAt,
+      hasSnapToken: !!orderGroup.snapToken && orderGroup.snapToken.length > 0,
+    });
+
+    // ============ STEP 2: Check if order has expired ============
+    const now = new Date();
+    if (orderGroup.expiresAt && orderGroup.expiresAt < now) {
+      console.error('❌ Order has expired:', orderGroupId);
       return NextResponse.json(
-        { success: false, error: 'Invalid order - missing Midtrans transaction' },
+        { success: false, error: 'Order payment window has expired' },
         { status: 400 }
       );
     }
 
-    console.log('🔍 Checking transaction status with Midtrans...');
+    // ============ STEP 3: Check current Midtrans status ============
+    console.log('🔍 Checking current Midtrans status...');
 
     try {
-      // ============ QUERY MIDTRANS FOR EXISTING TRANSACTION STATUS ============
       const transactionStatus = await MidtransService.getTransactionStatus(
         orderGroup.midtransOrderId
       );
 
-      console.log('📊 Transaction status from Midtrans:', {
-        transaction_status: transactionStatus.transaction_status,
-        fraud_status: transactionStatus.fraud_status,
-        status_code: transactionStatus.status_code,
-      });
+      const { status } = MidtransService.parseNotificationStatus(
+        transactionStatus
+      );
 
-      // ============ PARSE TRANSACTION STATUS ============
-      const { status } = MidtransService.parseNotificationStatus(transactionStatus);
+      console.log('📊 Current Midtrans status:', status);
 
-      // If already completed on Midtrans, update our DB
+      // If already completed, don't allow resume
       if (status === 'completed') {
-        console.log('✅ Midtrans shows payment already completed');
-
-        const updated = await OrderGroupService.completePayment(
-          orderGroupId,
-          transactionStatus.transaction_id
-        );
-
-        return NextResponse.json({
-          success: true,
-          data: {
-            token: 'already_completed',
-            amount: orderGroup.totalPaid,
-            status: 'completed',
-            message: 'Payment already completed on Midtrans',
-          },
-        });
-      }
-
-      // If failed or expired, return error
-      if (status === 'failed' || status === 'cancelled') {
-        console.log('❌ Transaction is in failed state on Midtrans');
-
-        // Update to failed
-        await OrderGroupService.failPayment(orderGroupId);
-
+        console.log('✅ Order already paid!');
         return NextResponse.json(
           {
             success: false,
-            error: 'Payment was not completed. Please try a new transaction.',
-            status: 'failed',
+            error: 'This order has already been paid',
+            alreadyPaid: true,
           },
           { status: 400 }
         );
       }
 
-      // ============ IF STILL PENDING, GET EXISTING SNAP TOKEN ============
-      console.log('⏳ Transaction still pending - retrieving existing Snap token');
-
-      // Get a fresh Snap token for the SAME transaction
-      const snapResponse = await MidtransService.getSnapToken(
-        orderGroup.midtransOrderId
-      );
-
-      console.log('✅ Snap token retrieved successfully');
-      console.log('   Token preview:', snapResponse.token.substring(0, 20) + '...');
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          token: snapResponse.token,
-          amount: orderGroup.totalPaid,
-          orderGroupId,
-          message: 'Use the same payment link - no charges duplicated',
-        },
-      });
-
-    } catch (midtransError) {
-      console.error('❌ Error querying Midtrans:', midtransError);
-
-      // If Midtrans is unreachable, create a NEW transaction as fallback
-      console.log('⚠️ Fallback: Creating new transaction since Midtrans query failed');
-
-      try {
-        // Create completely NEW order group with new Midtrans ID
-        const newMidtransOrderId = `${orderGroupId}-retry-${Date.now()}`;
-
-        console.log('🔄 Creating new OrderGroup with new Midtrans ID:', newMidtransOrderId);
-
-        // Create new snap token
-        const newSnapResponse = await MidtransService.createTransaction(
-          newMidtransOrderId,
-          orderGroup.totalPaid,
-          {
-            first_name: 'User',
-            email: 'user@example.com',
-            phone: '0',
-          }
-        );
-
-        // Update the original order group with new Midtrans ID
-        await OrderGroupService.updateMidtransOrderId(
-          orderGroupId,
-          newMidtransOrderId
-        );
-
-        console.log('✅ New transaction created as fallback');
-
-        return NextResponse.json({
-          success: true,
-          data: {
-            token: newSnapResponse.token,
-            amount: orderGroup.totalPaid,
-            orderGroupId,
-            isNewTransaction: true,
-            message: 'New payment transaction created (Midtrans connection issue)',
-          },
-        });
-
-      } catch (fallbackError) {
-        console.error('❌ Fallback transaction creation also failed:', fallbackError);
-
+      // If failed, can't resume
+      if (status === 'failed' || status === 'cancelled') {
+        console.log('❌ Payment failed, cannot resume');
         return NextResponse.json(
           {
             success: false,
-            error: 'Failed to retrieve payment gateway. Please try again later.',
-            details: fallbackError instanceof Error ? fallbackError.message : 'Unknown error',
+            error: 'Previous payment failed. Please create a new order.',
+            paymentFailed: true,
           },
-          { status: 503 }
+          { status: 400 }
         );
       }
+    } catch (gatewayError) {
+      console.warn('⚠️ Could not reach gateway, proceeding with stored token:', gatewayError);
     }
 
-  } catch (error) {
-    console.error('❌ Payment resume error:', error);
+    // ============ STEP 4: Retrieve or create Snap token ============
+    console.log('🔍 Checking for stored Snap token...');
 
+    let snapToken = orderGroup.snapToken;
+
+    // ✅ FIX: Check if token is empty string or actually missing
+    const hasValidToken = snapToken && snapToken.trim().length > 0;
+
+    console.log('📋 Token validation:', {
+      hasToken: !!snapToken,
+      hasValidToken,
+      tokenLength: snapToken?.length || 0,
+      tokenPreview: snapToken?.substring(0, 30),
+    });
+
+    if (!hasValidToken) {
+      console.log('⚠️ No valid stored Snap token, creating new one from Midtrans...');
+
+      try {
+        const newTokenResponse = await MidtransService.createTransaction(
+          orderGroup.midtransOrderId,
+          orderGroup.totalPaid,
+          {
+            first_name: 'Customer',
+            email: 'customer@example.com',
+            phone: '08123456789',
+          }
+        );
+
+        snapToken = newTokenResponse.token;
+
+        console.log('✅ New token created from Midtrans:', {
+          tokenPreview: snapToken.substring(0, 20) + '...',
+        });
+
+        // ✅ Save the newly created token back to database
+        await OrderGroupService.updateSnapToken(orderGroupId, snapToken);
+        console.log('💾 New token saved to database for future use');
+      } catch (tokenError) {
+        console.error('❌ Failed to create token:', tokenError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to create payment token. Please try again.',
+            details: tokenError instanceof Error ? tokenError.message : 'Unknown error',
+          },
+          { status: 500 }
+        );
+      }
+    } else {
+      console.log('✅ Using stored Snap token from database:', {
+        tokenPreview: snapToken.substring(0, 20) + '...',
+      });
+    }
+
+    // ============ STEP 5: Return token for payment ============
+    return NextResponse.json({
+      success: true,
+      data: {
+        token: snapToken,
+        orderGroupId: orderGroupId,
+        midtransOrderId: orderGroup.midtransOrderId,
+        totalPaid: orderGroup.totalPaid,
+        isExistingPayment: true,
+        isNewToken: !orderGroup.snapToken || !orderGroup.snapToken.trim(),
+      },
+      message: 'Payment session retrieved. Please complete the payment.',
+    });
+  } catch (error) {
+    console.error('❌ Error resuming payment:', error);
     return NextResponse.json(
       {
         success: false,

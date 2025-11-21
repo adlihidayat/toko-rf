@@ -37,6 +37,17 @@ interface DialogState {
   description: string;
 }
 
+interface ResumedOrder {
+  orderId: string;
+  midtransOrderId: string;
+  token: string;
+  quantity: number;
+  totalPaid: number;
+  expiresAt: string;
+  timeRemaining: number;
+  isResumed: boolean;
+}
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,6 +65,11 @@ function CheckoutContent() {
     title: "",
     description: "",
   });
+
+  // Resume payment states
+  const [resumedOrder, setResumedOrder] = useState<ResumedOrder | null>(null);
+  const [checkingResume, setCheckingResume] = useState(false);
+  const [showResumeOption, setShowResumeOption] = useState(false);
 
   // Extract userId from cookies
   useEffect(() => {
@@ -107,6 +123,44 @@ function CheckoutContent() {
     fetchProduct();
   }, [productId, router]);
 
+  // Check for pending/resumed order on mount
+  useEffect(() => {
+    const checkForPendingOrder = async () => {
+      if (!productId || !userId || checkingResume) return;
+
+      try {
+        setCheckingResume(true);
+        console.log("🔍 Checking for pending order...");
+
+        const response = await fetch("/api/payment/resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productId, userId }),
+        });
+
+        const { success, data, error } = await response.json();
+
+        if (success && data) {
+          console.log("✅ Found pending order - resume available");
+          setResumedOrder(data);
+          setShowResumeOption(true);
+        } else {
+          console.log("ℹ️ No pending order:", error);
+          setResumedOrder(null);
+          setShowResumeOption(false);
+        }
+      } catch (error) {
+        console.error("Error checking pending order:", error);
+        setResumedOrder(null);
+        setShowResumeOption(false);
+      } finally {
+        setCheckingResume(false);
+      }
+    };
+
+    checkForPendingOrder();
+  }, [productId, userId]);
+
   const handleQuantityChange = (value: number) => {
     const min = product?.minimumPurchase || 1;
     if (value >= min) {
@@ -118,6 +172,95 @@ function CheckoutContent() {
     return product ? product.price * quantity : 0;
   };
 
+  // Handle resuming existing payment
+  const handleResumePayment = async () => {
+    if (!resumedOrder || !snapLoaded) {
+      setDialog({
+        type: "error",
+        title: "Error",
+        description: "Payment system not ready. Please try again.",
+      });
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      console.log("🔄 Resuming payment with token:", resumedOrder.token);
+
+      if (window.snap) {
+        window.snap.pay(resumedOrder.token, {
+          onSuccess: async function (result: any) {
+            console.log("✅ Payment success from Midtrans:", result);
+
+            try {
+              const confirmResponse = await fetchWithAuth(
+                `/api/payment/confirm`,
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    orderGroupId: resumedOrder.orderId,
+                    midtransTransactionId: result.transaction_id,
+                    paymentStatus: "completed",
+                  }),
+                }
+              );
+
+              if (confirmResponse.ok) {
+                console.log("✅ Order confirmed");
+              }
+            } catch (confirmError) {
+              console.error("❌ Error confirming payment:", confirmError);
+            }
+
+            setDialog({
+              type: "success",
+              title: "Payment Successful",
+              description: "Your payment has been completed!",
+            });
+
+            setTimeout(() => {
+              router.push("/history?tab=history&payment=success");
+            }, 2000);
+          },
+
+          onPending: function (result: any) {
+            console.log("⏳ Payment pending:", result);
+            setDialog({
+              type: "info",
+              title: "Payment Pending",
+              description: "Your payment is still pending.",
+            });
+            setProcessing(false);
+          },
+
+          onError: function (result: any) {
+            console.error("❌ Payment error:", result);
+            setDialog({
+              type: "error",
+              title: "Payment Failed",
+              description: "Payment failed. Please try again.",
+            });
+            setProcessing(false);
+          },
+
+          onClose: function () {
+            console.log("🚪 Payment popup closed");
+            setProcessing(false);
+          },
+        });
+      }
+    } catch (error) {
+      console.error("❌ Error resuming payment:", error);
+      setDialog({
+        type: "error",
+        title: "Error",
+        description: "Failed to resume payment. Please try again.",
+      });
+      setProcessing(false);
+    }
+  };
+
+  // Handle new payment
   const handlePayNow = async () => {
     if (!product || !userId) {
       setDialog({
@@ -143,7 +286,6 @@ function CheckoutContent() {
 
       console.log("🔄 Creating payment transaction...");
 
-      // ✅ Step 1: Get Midtrans token and reserved stocks (don't create order yet)
       const response = await fetch("/api/payment/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,8 +312,12 @@ function CheckoutContent() {
 
       console.log("✅ Payment token received");
 
+      // ✅ STORE THE TOKEN - This is important for resume!
+      const snapToken = data.token;
+
       if (window.snap) {
-        window.snap.pay(data.token, {
+        window.snap.pay(snapToken, {
+          // ✅ Use the token
           onSuccess: async function (result: any) {
             console.log("✅ Payment success from Midtrans:", result);
 
@@ -187,6 +333,7 @@ function CheckoutContent() {
                     quantity: data.quantity,
                     totalPaid: data.totalPaid,
                     userId: data.userId,
+                    snapToken: snapToken, // ✅ PASS THE TOKEN
                     midtransTransactionId: result.transaction_id,
                     paymentStatus: "completed",
                   }),
@@ -214,7 +361,7 @@ function CheckoutContent() {
             }, 2000);
           },
 
-          onPending: function (result: any) {
+          onPending: async function (result: any) {
             console.log("⏳ Payment pending:", result);
 
             const confirmPending = async () => {
@@ -230,8 +377,9 @@ function CheckoutContent() {
                       quantity: data.quantity,
                       totalPaid: data.totalPaid,
                       userId: data.userId,
+                      snapToken: data.token, // ✅ PASS THE TOKEN
                       midtransTransactionId: result.transaction_id,
-                      paymentStatus: "pending", // ✅ Stocks go to PENDING now
+                      paymentStatus: "pending",
                     }),
                   }
                 );
@@ -265,7 +413,26 @@ function CheckoutContent() {
           onError: function (result: any) {
             console.error("❌ Payment error:", result);
 
-            // ============ RELEASE STOCKS ON ERROR ============
+            const releaseReservedStocks = async (stockIds: string[]) => {
+              console.log("🔄 Releasing reserved stocks:", stockIds);
+
+              try {
+                const response = await fetch("/api/stocks/release", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ stockIds }),
+                });
+
+                if (response.ok) {
+                  console.log("✅ Stocks released successfully");
+                } else {
+                  console.warn("⚠️ Failed to release stocks via API");
+                }
+              } catch (error) {
+                console.error("❌ Error releasing stocks:", error);
+              }
+            };
+
             releaseReservedStocks(data.tempStockIds);
 
             setDialog({
@@ -279,7 +446,26 @@ function CheckoutContent() {
           onClose: function () {
             console.log("🚪 Payment popup closed by user");
 
-            // ============ RELEASE STOCKS ON CANCEL ============
+            const releaseReservedStocks = async (stockIds: string[]) => {
+              console.log("🔄 Releasing reserved stocks:", stockIds);
+
+              try {
+                const response = await fetch("/api/stocks/release", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ stockIds }),
+                });
+
+                if (response.ok) {
+                  console.log("✅ Stocks released successfully");
+                } else {
+                  console.warn("⚠️ Failed to release stocks via API");
+                }
+              } catch (error) {
+                console.error("❌ Error releasing stocks:", error);
+              }
+            };
+
             releaseReservedStocks(data.tempStockIds);
 
             setProcessing(false);
@@ -290,28 +476,6 @@ function CheckoutContent() {
             });
           },
         });
-
-        // Add this helper function inside CheckoutContent component:
-        const releaseReservedStocks = async (stockIds: string[]) => {
-          console.log("🔄 Releasing reserved stocks:", stockIds);
-
-          try {
-            // Call API endpoint to release stocks
-            const response = await fetch("/api/stocks/release", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ stockIds }),
-            });
-
-            if (response.ok) {
-              console.log("✅ Stocks released successfully");
-            } else {
-              console.warn("⚠️ Failed to release stocks via API");
-            }
-          } catch (error) {
-            console.error("❌ Error releasing stocks:", error);
-          }
-        };
       } else {
         console.error("❌ Snap not available");
         setDialog({
@@ -399,7 +563,7 @@ function CheckoutContent() {
         />
       )}
 
-      {/* Load Midtrans Snap.js - SANDBOX VERSION */}
+      {/* Load Midtrans Snap.js */}
       <Script
         src={SNAP_URL}
         data-client-key={MIDTRANS_CLIENT_KEY}
@@ -569,6 +733,47 @@ function CheckoutContent() {
                     <CardTitle className="text-primary">Order Total</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
+                    {/* RESUME PAYMENT OPTION */}
+                    {showResumeOption && resumedOrder && (
+                      <div className="mb-4 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
+                        <p className="text-sm text-blue-300 mb-3">
+                          💳 You have an incomplete payment for this product!
+                        </p>
+                        <p className="text-xs text-blue-200 mb-3">
+                          Created at:{" "}
+                          {new Date(resumedOrder.expiresAt).toLocaleString()}
+                          <br />
+                          Time remaining: {resumedOrder.timeRemaining} seconds
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleResumePayment}
+                            disabled={processing || !snapLoaded}
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2"
+                          >
+                            {processing ? (
+                              <>
+                                <Loader className="w-4 h-4 mr-2 animate-spin" />
+                                Resuming...
+                              </>
+                            ) : (
+                              "↩️ Resume Payment"
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setResumedOrder(null);
+                              setShowResumeOption(false);
+                            }}
+                            variant="outline"
+                            className="flex-1 border-blue-500/50 text-blue-300"
+                          >
+                            Start Fresh
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Price Breakdown */}
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
@@ -593,25 +798,27 @@ function CheckoutContent() {
                     </div>
 
                     {/* Payment Button */}
-                    <Button
-                      onClick={handlePayNow}
-                      disabled={processing || !snapLoaded}
-                      className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg disabled:opacity-50"
-                    >
-                      {processing ? (
-                        <>
-                          <Loader className="w-4 h-4 mr-2 animate-spin" />
-                          Processing...
-                        </>
-                      ) : !snapLoaded ? (
-                        <>
-                          <Loader className="w-4 h-4 mr-2 animate-spin" />
-                          Loading Payment...
-                        </>
-                      ) : (
-                        `Pay with Midtrans ${USE_SANDBOX ? "(Sandbox)" : ""}`
-                      )}
-                    </Button>
+                    {!showResumeOption || !resumedOrder ? (
+                      <Button
+                        onClick={handlePayNow}
+                        disabled={processing || !snapLoaded}
+                        className="w-full bg-linear-to-r from-[#00BCA8] to-[#00E19D] text-black font-bold hover:opacity-90 py-6 rounded-lg disabled:opacity-50"
+                      >
+                        {processing ? (
+                          <>
+                            <Loader className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : !snapLoaded ? (
+                          <>
+                            <Loader className="w-4 h-4 mr-2 animate-spin" />
+                            Loading Payment...
+                          </>
+                        ) : (
+                          `Pay with Midtrans ${USE_SANDBOX ? "(Sandbox)" : ""}`
+                        )}
+                      </Button>
+                    ) : null}
 
                     {/* Security Info */}
                     <div className="bg-stone-800/30 border border-white/10 rounded-lg p-3">

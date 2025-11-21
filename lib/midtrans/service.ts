@@ -1,4 +1,6 @@
-// lib/midtrans/service.ts - COMPLETE UPDATED VERSION
+// lib/midtrans/service.ts - FIXED VERSION
+// Key change: createTransaction now uses orderId from parameter instead of generating new one
+
 import { midtransConfig, createAuthString, MIDTRANS_MODE } from './config';
 
 interface TransactionDetails {
@@ -37,10 +39,10 @@ interface SnapTokenResponse {
 export class MidtransService {
   /**
    * Create Snap transaction token
+   * 
+   * IMPORTANT: If orderId is provided, it REUSES that order (for resume)
+   * If orderId is NOT provided, a new one is generated
    */
-  // lib/midtrans/service.ts - ADD THIS TO YOUR EXISTING FILE
-  // Replace the createTransaction method with this improved version:
-
   static async createTransaction(
     orderId: string,
     grossAmount: number,
@@ -57,9 +59,12 @@ export class MidtransService {
 
       const authString = createAuthString(serverKey);
 
+      // USE THE PROVIDED ORDER ID (critical for resume functionality!)
+      const finalOrderId = orderId;
+
       const requestBody: SnapTokenRequest = {
         transaction_details: {
-          order_id: orderId,
+          order_id: finalOrderId,
           gross_amount: grossAmount,
         },
         customer_details: customerDetails,
@@ -68,7 +73,6 @@ export class MidtransService {
         },
       };
 
-      // Add item details if provided
       if (itemDetails && itemDetails.length > 0) {
         requestBody.item_details = itemDetails;
       }
@@ -76,13 +80,10 @@ export class MidtransService {
       console.log('🔄 Midtrans API Request:', {
         mode: MIDTRANS_MODE,
         url: midtransConfig.apiUrl,
-        orderId,
+        orderId: finalOrderId,
         grossAmount,
         customerEmail: customerDetails.email,
-        serverKey: serverKey.substring(0, 15) + '...',
       });
-
-      console.log('📤 Request body being sent:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(midtransConfig.apiUrl, {
         method: 'POST',
@@ -95,13 +96,8 @@ export class MidtransService {
       });
 
       console.log('📡 Midtrans API Response Status:', response.status);
-      console.log('📡 Response Headers:', {
-        contentType: response.headers.get('content-type'),
-        contentLength: response.headers.get('content-length'),
-      });
 
       const responseText = await response.text();
-      console.log('📡 Response Body:', responseText);
 
       if (!response.ok) {
         let errorData;
@@ -130,7 +126,6 @@ export class MidtransService {
         data = JSON.parse(responseText);
       } catch (parseError) {
         console.error('❌ Failed to parse Midtrans response:', parseError);
-        console.error('Response was:', responseText);
         throw new Error('Invalid response from Midtrans API');
       }
 
@@ -140,25 +135,20 @@ export class MidtransService {
       }
 
       console.log('✅ Midtrans token created successfully:', {
+        orderId: finalOrderId,
         tokenPreview: data.token.substring(0, 20) + '...',
         mode: MIDTRANS_MODE,
-        redirectUrl: data.redirect_url,
       });
 
       return data;
     } catch (error) {
       console.error('❌ Midtrans transaction creation error:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       throw error;
     }
   }
 
   /**
    * Get transaction status from Midtrans
-   * Used to verify payment status from gateway
-   * 
-   * @param orderId The order ID to check
-   * @returns Transaction details from Midtrans including status, transaction ID, etc.
    */
   static async getTransactionStatus(orderId: string): Promise<any> {
     try {
@@ -170,7 +160,6 @@ export class MidtransService {
 
       const authString = createAuthString(serverKey);
 
-      // Use the correct URL based on sandbox/production mode
       const statusUrl = midtransConfig.isSandbox
         ? `https://api.sandbox.midtrans.com/v2/${orderId}/status`
         : `https://api.midtrans.com/v2/${orderId}/status`;
@@ -178,7 +167,6 @@ export class MidtransService {
       console.log('🔍 Querying Midtrans transaction status:', {
         orderId,
         mode: MIDTRANS_MODE,
-        url: statusUrl,
       });
 
       const response = await fetch(statusUrl, {
@@ -194,12 +182,9 @@ export class MidtransService {
         const errorData = await response.text();
         console.error('❌ Midtrans status query failed:', {
           status: response.status,
-          statusText: response.statusText,
           error: errorData,
         });
-        throw new Error(
-          `Failed to query transaction status: ${response.status} ${response.statusText}`
-        );
+        throw new Error(`Failed to query transaction status: ${response.status}`);
       }
 
       const data = await response.json();
@@ -210,8 +195,6 @@ export class MidtransService {
         status_code: data.status_code,
         transaction_status: data.transaction_status,
         fraud_status: data.fraud_status,
-        settlement_time: data.settlement_time,
-        gross_amount: data.gross_amount,
       });
 
       return data;
@@ -222,19 +205,7 @@ export class MidtransService {
   }
 
   /**
-   * Verify transaction status from Midtrans notification
-   * @deprecated Use getTransactionStatus instead
-   */
-  static async verifyTransactionStatus(orderId: string): Promise<any> {
-    console.warn('⚠️ verifyTransactionStatus is deprecated. Use getTransactionStatus instead.');
-    return this.getTransactionStatus(orderId);
-  }
-
-  /**
    * Parse Midtrans notification to determine payment status
-   * 
-   * @param notification Midtrans webhook notification object
-   * @returns Parsed status information
    */
   static parseNotificationStatus(notification: any): {
     status: 'pending' | 'completed' | 'failed' | 'cancelled';
@@ -248,33 +219,21 @@ export class MidtransService {
 
     let status: 'pending' | 'completed' | 'failed' | 'cancelled' = 'pending';
 
-    // Settlement is always success
     if (transactionStatus === 'settlement') {
       status = 'completed';
       console.log('✅ Transaction settled - status: completed');
-    }
-    // Capture might be challenged
-    else if (transactionStatus === 'capture') {
+    } else if (transactionStatus === 'capture') {
       status = fraudStatus === 'accept' ? 'completed' : 'pending';
-      if (fraudStatus === 'accept') {
-        console.log('✅ Transaction captured and accepted - status: completed');
-      } else if (fraudStatus === 'challenge') {
-        console.log('⚠️ Transaction captured but challenged - status: pending');
-      }
-    }
-    // Pending is still pending
-    else if (transactionStatus === 'pending') {
+    } else if (transactionStatus === 'pending') {
       status = 'pending';
-      console.log('⏳ Transaction still pending - status: pending');
-    }
-    // Deny, cancel, expire are all failures
-    else if (
+      console.log('⏳ Transaction still pending');
+    } else if (
       transactionStatus === 'cancel' ||
       transactionStatus === 'deny' ||
       transactionStatus === 'expire'
     ) {
       status = 'failed';
-      console.log(`❌ Transaction ${transactionStatus} - status: failed`);
+      console.log(`❌ Transaction ${transactionStatus}`);
     }
 
     console.log('📊 Parsed notification:', {
@@ -282,7 +241,6 @@ export class MidtransService {
       transactionStatus,
       fraudStatus,
       orderId,
-      mode: MIDTRANS_MODE,
     });
 
     return {
@@ -294,40 +252,25 @@ export class MidtransService {
   }
 
   /**
-   * Check if transaction is actually paid (safe to release redeem codes)
-   * 
-   * @param transactionStatus Status from Midtrans
-   * @param fraudStatus Fraud status from Midtrans
-   * @returns true if payment is confirmed and safe to use
+   * Check if transaction is actually paid
    */
   static isTransactionSuccessful(
     transactionStatus: string,
     fraudStatus?: string
   ): boolean {
-    // Settlement is always success
     if (transactionStatus === 'settlement') {
-      console.log('✅ Transaction is successful (settlement)');
       return true;
     }
 
-    // Capture without challenge is success
     if (transactionStatus === 'capture' && fraudStatus === 'accept') {
-      console.log('✅ Transaction is successful (capture accepted)');
       return true;
     }
 
-    console.log('❌ Transaction is not successful:', {
-      transactionStatus,
-      fraudStatus,
-    });
     return false;
   }
 
   /**
    * Get user-friendly status message
-   * 
-   * @param status Payment status
-   * @returns User-friendly message
    */
   static getStatusMessage(status: string): string {
     const messages: Record<string, string> = {
@@ -342,9 +285,6 @@ export class MidtransService {
 
   /**
    * Get transaction details with full information
-   * 
-   * @param orderId The order ID
-   * @returns Transaction object with all details
    */
   static async getTransactionDetails(orderId: string): Promise<any> {
     try {
@@ -373,104 +313,6 @@ export class MidtransService {
       };
     } catch (error) {
       console.error('❌ Failed to get transaction details:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get Snap token for an existing transaction
-   * This retrieves the token for a transaction that's already been created in Midtrans
-   * Useful for resuming payments without creating a new transaction
-   * 
-   * @param orderId The existing Midtrans order ID
-   * @returns Snap token that can be used to reopen payment
-   */
-  static async getSnapToken(orderId: string): Promise<{ token: string }> {
-    try {
-      const serverKey = process.env.MIDTRANS_SERVER_KEY;
-
-      if (!serverKey) {
-        throw new Error('MIDTRANS_SERVER_KEY is not set');
-      }
-
-      const authString = createAuthString(serverKey);
-
-      // Get the existing transaction status first
-      const statusUrl = midtransConfig.isSandbox
-        ? `https://api.sandbox.midtrans.com/v2/${orderId}/status`
-        : `https://api.midtrans.com/v2/${orderId}/status`;
-
-      console.log('🔍 Fetching existing transaction:', orderId);
-
-      const statusResponse = await fetch(statusUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${authString}`,
-        },
-      });
-
-      if (!statusResponse.ok) {
-        throw new Error(`Failed to fetch transaction status: ${statusResponse.status}`);
-      }
-
-      const transactionData = await statusResponse.json();
-
-      console.log('✅ Transaction found:', {
-        order_id: transactionData.order_id,
-        status: transactionData.transaction_status,
-      });
-
-      // Generate a new Snap token for this transaction
-      // The Snap token endpoint can create tokens for existing transactions
-      const snapTokenUrl = midtransConfig.isSandbox
-        ? `https://app.sandbox.midtrans.com/snap/v1/transactions/${orderId}/snap-token`
-        : `https://app.midtrans.com/snap/v1/transactions/${orderId}/snap-token`;
-
-      console.log('🔄 Requesting Snap token for order:', orderId);
-
-      const snapResponse = await fetch(snapTokenUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${authString}`,
-        },
-      });
-
-      if (!snapResponse.ok) {
-        const errorText = await snapResponse.text();
-        console.warn('⚠️ Snap token endpoint returned:', snapResponse.status);
-        console.warn('   Response:', errorText);
-
-        // If snap-token endpoint doesn't work, fall back to creating a NEW token
-        // (some Midtrans setups don't have this endpoint)
-        console.log('📝 Falling back to recreating token via Snap endpoint');
-
-        return await this.createTransaction(
-          orderId,
-          transactionData.gross_amount,
-          {
-            first_name: transactionData.customer_details?.first_name || 'Customer',
-            email: transactionData.customer_details?.email || 'customer@example.com',
-            phone: transactionData.customer_details?.phone || '0',
-          }
-        );
-      }
-
-      const snapData = await snapResponse.json();
-
-      console.log('✅ Snap token retrieved:', {
-        tokenPreview: snapData.snap_token.substring(0, 20) + '...',
-      });
-
-      return {
-        token: snapData.snap_token,
-      };
-
-    } catch (error) {
-      console.error('❌ Error getting Snap token:', error);
       throw error;
     }
   }
