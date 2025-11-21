@@ -1,15 +1,14 @@
-// app/api/cron/sync-order-status/route.ts - NEW CRON JOB ENDPOINT
+// app/api/cron/release-expired-orders/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { OrderGroupService } from '@/lib/db/services/order-group';
 
 /**
- * Cron job to sync all pending orders with Midtrans gateway
+ * Cron job to auto-release expired pending orders
  * 
- * Runs every 10 minutes
- * - Queries Midtrans for current payment status of all pending orders
- * - If Midtrans says completed, update local DB
- * - If Midtrans says failed, release order and stocks
- * - Acts as failsafe if webhook notification is missed
+ * Runs every 5 minutes
+ * - Checks all pending orders
+ * - If expiresAt < now, marks as failed and releases stocks
+ * - Stocks go back to 'available' automatically via OrderGroupService.failPayment()
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,24 +26,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('🔄 [CRON] Starting payment status sync...');
+    console.log('⏰ [CRON] Starting expired order cleanup...');
 
-    const result = await OrderGroupService.syncAllPendingOrders();
+    const releasedCount = await OrderGroupService.releaseExpiredOrders();
 
-    console.log('✅ [CRON] Payment sync completed:', result);
+    console.log(`✅ [CRON] Released ${releasedCount} expired orders`);
 
     return NextResponse.json({
       success: true,
-      message: 'Payment status sync completed',
-      result,
+      message: `Auto-released ${releasedCount} expired orders`,
+      releasedCount,
     });
   } catch (error) {
-    console.error('❌ [CRON] Error syncing orders:', error);
+    console.error('❌ [CRON] Error releasing expired orders:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to sync order status',
+        error: 'Failed to release expired orders',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
