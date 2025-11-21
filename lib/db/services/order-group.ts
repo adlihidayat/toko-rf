@@ -1,4 +1,4 @@
-// lib/db/services/order-group.ts - COMPLETE VERSION
+// lib/db/services/order-group.ts - COMPLETE FIXED VERSION
 import connectDB from '../mongodb';
 import OrderGroup from '../models/OrderGroup';
 import Stock from '../models/Stock';
@@ -17,7 +17,8 @@ export interface OrderGroupWithDetails extends OrderGroupDocument {
 
 export class OrderGroupService {
   /**
-   * Create a new order group with pending stocks
+   * ✅ FIX: Create a new order group with pending stocks
+   * NOW STORES snapToken for payment resume
    */
   static async createOrderGroup(
     userId: string,
@@ -25,7 +26,8 @@ export class OrderGroupService {
     stockIds: string[],
     quantity: number,
     totalPaid: number,
-    midtransOrderId: string
+    midtransOrderId: string,
+    snapToken?: string
   ): Promise<OrderGroupDocument> {
     await connectDB();
 
@@ -39,12 +41,16 @@ export class OrderGroupService {
       quantity,
       totalPaid,
       midtransOrderId,
+      snapToken,
       paymentStatus: 'pending',
       reservedAt: new Date(),
       expiresAt,
     });
 
-    console.log('✅ OrderGroup created:', orderGroup._id);
+    console.log('✅ OrderGroup created:', {
+      id: orderGroup._id,
+      hasSnapToken: !!snapToken,
+    });
 
     // Link stocks to this order group
     await Stock.updateMany(
@@ -57,12 +63,11 @@ export class OrderGroupService {
     );
 
     console.log('🔗 Stocks linked to OrderGroup');
-    return orderGroup.toObject();
+    return orderGroup.toObject() as unknown as OrderGroupDocument;
   }
 
   /**
-   * Update the Midtrans order ID for an OrderGroup
-   * Used after OrderGroup is created but before Midtrans transaction
+   * ✅ FIX: Update the Midtrans order ID for an OrderGroup
    */
   static async updateMidtransOrderId(
     orderGroupId: string,
@@ -74,7 +79,7 @@ export class OrderGroupService {
       orderGroupId,
       { midtransOrderId },
       { new: true }
-    ).lean();
+    ).lean() as unknown as (OrderGroupDocument | null);
 
     if (!orderGroup) {
       console.error('❌ OrderGroup not found:', orderGroupId);
@@ -86,21 +91,93 @@ export class OrderGroupService {
   }
 
   /**
+   * ✅ FIX: Update the Midtrans transaction ID for an OrderGroup
+   */
+  static async updateTransactionId(
+    orderGroupId: string,
+    transactionId: string
+  ): Promise<OrderGroupDocument | null> {
+    await connectDB();
+
+    const orderGroup = await OrderGroup.findByIdAndUpdate(
+      orderGroupId,
+      { midtransTransactionId: transactionId },
+      { new: true }
+    ).lean() as unknown as (OrderGroupDocument | null);
+
+    if (!orderGroup) {
+      console.error('❌ OrderGroup not found:', orderGroupId);
+      return null;
+    }
+
+    console.log('✅ Transaction ID stored:', transactionId);
+    return orderGroup;
+  }
+
+  /**
    * Get order group by Midtrans order ID
    */
   static async getByMidtransOrderId(
     midtransOrderId: string
   ): Promise<OrderGroupDocument | null> {
     await connectDB();
-    return await OrderGroup.findOne({ midtransOrderId }).lean();
+    return await OrderGroup.findOne({ midtransOrderId }).lean() as unknown as (OrderGroupDocument | null);
   }
 
   /**
-   * Get order group by ID
+   * Get order group by ID - with proper snapToken retrieval
    */
   static async getById(id: string): Promise<OrderGroupDocument | null> {
     await connectDB();
-    return await OrderGroup.findById(id).lean();
+
+    try {
+      // ✅ FIX: Try to get the full document first (not lean)
+      const orderGroup = await OrderGroup.findById(id);
+
+      if (!orderGroup) {
+        console.log('❌ OrderGroup not found:', id);
+        return null;
+      }
+
+      // Convert to plain object to get all fields properly
+      const plainObject = orderGroup.toObject() as unknown as OrderGroupDocument;
+
+      console.log('✅ OrderGroup retrieved:', {
+        id: plainObject._id,
+        hasSnapToken: !!plainObject.snapToken && plainObject.snapToken.length > 0,
+        tokenLength: plainObject.snapToken?.length || 0,
+      });
+
+      return plainObject;
+    } catch (error) {
+      console.error('❌ Error fetching order group:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Alternative: Use explicit field selection for .lean()
+   * If you must use .lean(), use this instead:
+   */
+  static async getByIdLean(id: string): Promise<OrderGroupDocument | null> {
+    await connectDB();
+
+    try {
+      // ✅ FIX: Explicitly select all fields when using lean
+      const orderGroup = await OrderGroup.findById(id)
+        .select('+snapToken +midtransOrderId +userId +productId +stockIds +quantity +totalPaid +paymentStatus +rating +createdAt +updatedAt +reservedAt +paidAt +expiresAt +midtransTransactionId')
+        .lean() as unknown as (OrderGroupDocument | null);
+
+      if (!orderGroup) {
+        console.log('❌ OrderGroup not found:', id);
+        return null;
+      }
+
+      return orderGroup;
+    } catch (error) {
+      console.error('❌ Error fetching order group:', error);
+      return null;
+    }
   }
 
   /**
@@ -116,12 +193,11 @@ export class OrderGroupService {
       orderGroupId,
       { paymentStatus: status },
       { new: true }
-    ).lean();
+    ).lean() as unknown as (OrderGroupDocument | null);
   }
 
   /**
    * Complete payment and mark stocks as paid
-   * Called when Midtrans notification confirms payment
    */
   static async completePayment(
     orderGroupId: string,
@@ -137,14 +213,13 @@ export class OrderGroupService {
         paidAt: new Date(),
       },
       { new: true }
-    ).lean();
+    ).lean() as unknown as (OrderGroupDocument | null);
 
     if (!orderGroup) {
       console.error('❌ OrderGroup not found:', orderGroupId);
       return null;
     }
 
-    // Update all stocks to 'paid' status
     const updateResult = await Stock.updateMany(
       { _id: { $in: orderGroup.stockIds } },
       {
@@ -161,7 +236,6 @@ export class OrderGroupService {
 
   /**
    * Fail payment and release all stocks
-   * Called when payment fails or user cancels
    */
   static async failPayment(
     orderGroupId: string
@@ -174,14 +248,13 @@ export class OrderGroupService {
         paymentStatus: 'failed',
       },
       { new: true }
-    ).lean();
+    ).lean() as unknown as (OrderGroupDocument | null);
 
     if (!orderGroup) {
       console.error('❌ OrderGroup not found:', orderGroupId);
       return null;
     }
 
-    // Release all stocks back to available
     const updateResult = await Stock.updateMany(
       { _id: { $in: orderGroup.stockIds } },
       {
@@ -206,7 +279,7 @@ export class OrderGroupService {
   ): Promise<OrderGroupDocument | null> {
     await connectDB();
 
-    const orderGroup = await OrderGroup.findById(orderGroupId).lean();
+    const orderGroup = await OrderGroup.findById(orderGroupId).lean() as unknown as (OrderGroupDocument | null);
 
     if (!orderGroup) {
       console.error('❌ OrderGroup not found:', orderGroupId);
@@ -226,6 +299,9 @@ export class OrderGroupService {
     return await this.failPayment(orderGroupId);
   }
 
+  /**
+   * ✅ FIX: Get user's order groups with safe return type
+   */
   static async getUserOrderGroups(
     userId: string
   ): Promise<OrderGroupWithDetails[]> {
@@ -233,23 +309,22 @@ export class OrderGroupService {
 
     const orderGroups = await OrderGroup.find({ userId })
       .sort({ createdAt: -1 })
-      .lean();
+      .lean() as unknown as OrderGroupDocument[];
 
     return Promise.all(
       orderGroups.map(async (og) => {
         try {
           const product = await Product.findById(og.productId).lean();
           const user = await User.findById(og.userId).lean();
-          // Don't fetch stocks here - we don't need them
 
           return {
             ...og,
             productName: product?.name || 'Unknown',
             productPrice: product?.price || 0,
             userName: user?.username || 'Unknown',
-            stocks: [], // ✅ Don't include stocks
-            redeemCodes: [], // ✅ Don't include redeem codes
-          } as OrderGroupWithDetails;
+            stocks: [],
+            redeemCodes: [],
+          } as unknown as OrderGroupWithDetails;
         } catch (error) {
           console.error('Error enriching order group:', og._id, error);
           return {
@@ -259,14 +334,14 @@ export class OrderGroupService {
             userName: 'Error Loading',
             stocks: [],
             redeemCodes: [],
-          } as OrderGroupWithDetails;
+          } as unknown as OrderGroupWithDetails;
         }
       })
     );
   }
 
   /**
-   * Get user's statistics (only from completed orders)
+   * ✅ FIX: Get user's statistics (only from completed orders)
    */
   static async getUserStats(userId: string) {
     await connectDB();
@@ -274,7 +349,7 @@ export class OrderGroupService {
     const completedOrders = await OrderGroup.find({
       userId,
       paymentStatus: 'completed',
-    }).lean();
+    }).lean() as unknown as OrderGroupDocument[];
 
     const totalOrders = completedOrders.length;
     const totalSpent = completedOrders.reduce(
@@ -299,7 +374,7 @@ export class OrderGroupService {
   }
 
   /**
-   * Update order group rating
+   * ✅ FIX: Update order group rating
    */
   static async updateRating(
     orderGroupId: string,
@@ -311,12 +386,42 @@ export class OrderGroupService {
       orderGroupId,
       { rating },
       { new: true }
-    ).lean();
+    ).lean() as unknown as (OrderGroupDocument | null);
+  }
+
+  /**
+   * Get the most recent pending order for a user + product
+   */
+  static async getPendingOrderForProduct(
+    userId: string,
+    productId: string
+  ): Promise<OrderGroupDocument | null> {
+    await connectDB();
+
+    const pendingOrder = await OrderGroup.findOne({
+      userId,
+      productId,
+      paymentStatus: 'pending',
+    })
+      .sort({ createdAt: -1 })
+      .lean() as unknown as (OrderGroupDocument | null);
+
+    if (!pendingOrder) {
+      console.log('❌ No pending order found:', { userId, productId });
+      return null;
+    }
+
+    console.log('✅ Found pending order:', {
+      orderId: pendingOrder._id,
+      midtransOrderId: pendingOrder.midtransOrderId,
+      createdAt: pendingOrder.createdAt,
+    });
+
+    return pendingOrder;
   }
 
   /**
    * Auto-release expired pending orders
-   * Call this via a Vercel cron job or Node scheduler
    */
   static async releaseExpiredOrders(): Promise<number> {
     await connectDB();
@@ -325,7 +430,7 @@ export class OrderGroupService {
     const expiredOrders = await OrderGroup.find({
       paymentStatus: 'pending',
       expiresAt: { $lt: now },
-    }).lean();
+    }).lean() as unknown as OrderGroupDocument[];
 
     console.log(`⏰ Found ${expiredOrders.length} expired orders to release`);
 
@@ -354,7 +459,7 @@ export class OrderGroupService {
       .sort({ createdAt: -1 })
       .limit(limit)
       .skip(skip)
-      .lean();
+      .lean() as unknown as OrderGroupDocument[];
 
     return Promise.all(
       orderGroups.map(async (og) => {
@@ -365,8 +470,8 @@ export class OrderGroupService {
         }).lean();
 
         const redeemCodes = stocks
-          .filter((s) => s.status === 'paid')
-          .map((s) => s.redeemCode);
+          .filter((s: any) => s.status === 'paid')
+          .map((s: any) => s.redeemCode);
 
         return {
           ...og,
@@ -375,7 +480,7 @@ export class OrderGroupService {
           userName: user?.username || 'Unknown',
           stocks,
           redeemCodes,
-        } as OrderGroupWithDetails;
+        } as unknown as OrderGroupWithDetails;
       })
     );
   }
@@ -392,15 +497,14 @@ export class OrderGroupService {
   }
 
   /**
- * Sync order status with Midtrans gateway
- * Called periodically or on-demand to update local DB based on gateway status
- */
+   * Sync order status with Midtrans gateway
+   */
   static async syncOrderStatusWithGateway(
     orderGroupId: string
   ): Promise<OrderGroupDocument | null> {
     await connectDB();
 
-    const orderGroup = await OrderGroup.findById(orderGroupId).lean();
+    const orderGroup = await OrderGroup.findById(orderGroupId).lean() as unknown as (OrderGroupDocument | null);
 
     if (!orderGroup) {
       console.error("❌ OrderGroup not found:", orderGroupId);
@@ -453,7 +557,7 @@ export class OrderGroupService {
             paidAt: new Date(),
           },
           { new: true }
-        ).lean();
+        ).lean() as unknown as (OrderGroupDocument | null);
 
         // Mark all stocks as paid
         if (orderGroup.stockIds && orderGroup.stockIds.length > 0) {
@@ -483,7 +587,7 @@ export class OrderGroupService {
             paymentStatus: "failed",
           },
           { new: true }
-        ).lean();
+        ).lean() as unknown as (OrderGroupDocument | null);
 
         // Release stocks back to available
         if (orderGroup.stockIds && orderGroup.stockIds.length > 0) {
@@ -506,13 +610,41 @@ export class OrderGroupService {
       return orderGroup;
     } catch (error) {
       console.error("❌ Error syncing order status:", error);
-      return orderGroup; // Return current state on error
+      return orderGroup;
     }
   }
 
   /**
+ * ✅ FIX: Save Snap token to database
+ * This ensures we can resume payments with the same token
+ */
+  static async updateSnapToken(
+    orderGroupId: string,
+    snapToken: string
+  ): Promise<OrderGroupDocument | null> {
+    await connectDB();
+
+    const orderGroup = await OrderGroup.findByIdAndUpdate(
+      orderGroupId,
+      { snapToken },
+      { new: true }
+    ).lean() as unknown as (OrderGroupDocument | null);
+
+    if (!orderGroup) {
+      console.error('❌ OrderGroup not found:', orderGroupId);
+      return null;
+    }
+
+    console.log('💾 Snap token saved to database:', {
+      orderGroupId,
+      tokenPreview: snapToken.substring(0, 20) + '...',
+    });
+
+    return orderGroup;
+  }
+
+  /**
    * Sync all pending orders with gateway
-   * Useful for scheduled jobs or cron tasks
    */
   static async syncAllPendingOrders(): Promise<{
     total: number;
@@ -524,7 +656,7 @@ export class OrderGroupService {
 
     const pendingOrders = await OrderGroup.find({
       paymentStatus: "pending",
-    }).lean();
+    }).lean() as unknown as OrderGroupDocument[];
 
     console.log(`🔄 Syncing ${pendingOrders.length} pending orders...`);
 
@@ -565,4 +697,3 @@ export class OrderGroupService {
     };
   }
 }
-

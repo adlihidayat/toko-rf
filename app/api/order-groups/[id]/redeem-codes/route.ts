@@ -1,18 +1,20 @@
-
-// ============================================================
-// FILE 1: app/api/order-groups/[id]/redeem-codes/route.ts
-// ============================================================
-// NEW FILE - Create this file
-
+// app/api/order-groups/[id]/redeem-codes/route.ts
 import { OrderGroupService } from '@/lib/db/services/order-group';
 import { StockService } from '@/lib/db/services/stocks';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * GET /api/order-groups/[id]/redeem-codes
+ * SECURE ENDPOINT: GET /api/order-groups/[id]/redeem-codes
  * 
- * Secure endpoint to get redeem codes ONLY for completed payments
- * Requires: x-user-id header matching order owner
+ * ✅ Only accessible by order owner
+ * ✅ Only returns codes if payment is COMPLETED
+ * ✅ Never exposed in list views
+ * ✅ Fetched on-demand when user expands order
+ * 
+ * Usage:
+ * - Frontend: User clicks expand on completed order
+ * - Only then does it call this endpoint
+ * - Code is revealed only to the user who paid
  */
 export async function GET(
   request: NextRequest,
@@ -21,7 +23,7 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    // ============ SECURITY: Get user from auth header ============
+    // ============ SECURITY CHECK 1: Authentication ============
     const userId = request.headers.get('x-user-id');
     if (!userId) {
       return NextResponse.json(
@@ -30,39 +32,61 @@ export async function GET(
       );
     }
 
+    console.log(`🔐 Redeem code request from user: ${userId} for order: ${id}`);
+
+    // ============ SECURITY CHECK 2: Order exists ============
     const orderGroup = await OrderGroupService.getById(id);
 
     if (!orderGroup) {
+      // Don't leak that order exists
       return NextResponse.json(
-        { success: false, error: 'Order not found' },
+        { success: false, error: 'Not found' },
         { status: 404 }
       );
     }
 
-    // ============ SECURITY: Verify user ownership ============
+    // ============ SECURITY CHECK 3: User ownership ============
     if (orderGroup.userId.toString() !== userId) {
-      console.warn(`🚫 Unauthorized redeem code access: ${userId} -> ${id}`);
+      console.warn(
+        `🚫 UNAUTHORIZED ACCESS ATTEMPT: User ${userId} tried to access order ${id} (owner: ${orderGroup.userId})`
+      );
+
+      // Don't reveal that order exists
       return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 403 }
+        { success: false, error: 'Not found' },
+        { status: 404 }
       );
     }
 
-    // ============ SECURITY: Verify payment is completed ============
+    console.log(`✅ User ownership verified for order ${id}`);
+
+    // ============ SECURITY CHECK 4: Payment completed ============
     if (orderGroup.paymentStatus !== 'completed') {
-      console.warn(`🚫 Attempt to access redeem codes for ${orderGroup.paymentStatus} order: ${id}`);
+      console.warn(
+        `🚫 INVALID STATUS ACCESS: User ${userId} tried to access codes for ${orderGroup.paymentStatus} order ${id}`
+      );
+
+      // Return 402 Payment Required to indicate payment is needed
       return NextResponse.json(
-        { success: false, error: 'Payment not completed' },
-        { status: 402 }
+        {
+          success: false,
+          error: `Payment not completed. Current status: ${orderGroup.paymentStatus}`
+        },
+        { status: 402 } // 402 = Payment Required
       );
     }
 
-    // Get only paid stocks with redeem codes
-    const stocks = await StockService.getOrderGroupStocks(id);
-    const paidStocks = stocks.filter((s) => s.status === 'paid');
-    const redeemCodes = paidStocks.map((s) => s.redeemCode);
+    console.log(`✅ Payment verified as completed`);
 
-    console.log(`✅ Provided ${redeemCodes.length} redeem codes for order ${id} to user ${userId}`);
+    // ============ SAFE TO RETURN: Get redeem codes ============
+    const stocks = await StockService.getOrderGroupStocks(id);
+    const paidStocks = stocks.filter((s: any) => s.status === 'paid');
+    const redeemCodes = paidStocks.map((s: any) => s.redeemCode);
+
+    console.log(`✅ SECURE DELIVERY: Provided ${redeemCodes.length} redeem codes to user ${userId}`);
+
+    // Log for audit
+    console.log(`📋 AUDIT: User ${userId} accessed ${redeemCodes.length} codes from order ${id}`);
 
     return NextResponse.json({
       success: true,
@@ -70,15 +94,16 @@ export async function GET(
         orderGroupId: id,
         redeemCodes,
         count: redeemCodes.length,
+        accessedAt: new Date().toISOString(),
       },
     });
+
   } catch (error) {
     console.error('❌ Error fetching redeem codes:', error);
     return NextResponse.json(
       {
         success: false,
         error: 'Failed to fetch redeem codes',
-        details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     );

@@ -3,6 +3,7 @@ import connectDB from '../mongodb';
 import Stock from '../models/Stock';
 import Product from '../models/Product';
 import { StockDocument, CreateStockInput } from '@/lib/types';
+import OrderGroup from '../models/OrderGroup';
 
 export class StockService {
   /**
@@ -354,24 +355,17 @@ export class StockService {
   }
 
   /**
-   * Get stocks linked to an order group
-   */
-  static async getOrderGroupStocks(orderGroupId: string): Promise<StockDocument[]> {
-    try {
-      await connectDB();
+     * Get all stocks for an order group
+     * Used ONLY by redeem-codes endpoint
+     */
+  static async getOrderGroupStocks(orderGroupId: string) {
+    await connectDB();
 
-      const stocks = await Stock.find({ orderGroupId }).lean();
+    const stocks = await Stock.find({
+      _id: { $in: (await OrderGroup.findById(orderGroupId))?.stockIds || [] }
+    }).lean();
 
-      return stocks.map((stock) => ({
-        ...stock,
-        _id: stock._id?.toString(),
-        productId: stock.productId?.toString(),
-        orderGroupId: stock.orderGroupId?.toString() || null,
-      }));
-    } catch (error) {
-      console.error('❌ Error getting order group stocks:', error);
-      return [];
-    }
+    return stocks;
   }
 
   /**
